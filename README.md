@@ -18,9 +18,8 @@
 1. Публикация контента (фото или видео)
 2. Просмотр ленты
 3. Оценка понравившегося контента
-4. Пописки
-5. Публикация историй
-6. Просмотр историй
+4. Публикация историй
+5. Просмотр историй
 
 ## 1.4 Метрики
 
@@ -30,9 +29,13 @@
 | DAU | 500 млн [[3]](https://www.demandsage.com/instagram-statistics/) | Количество пользователей в день |
 | Посты в месяц | 17 шт [[4]](https://buffer.com/resources/instagram-engagement-rate/) | Среднее кол-во публикаций в месяц |
 | Тип публикуемого контента | 5.3 - фото, 2.4 - карусель, 2.3 - reels [[5]](https://metricool.com/instagram-research-study-2023/) | Распределение контента на 10 публикаций |
-| Удаление поста через неделю после публикации | 35% [[7]](https://arxiv.org/abs/2008.11317) | Из всех удаленных постов 35% приходятся на первую неделю после публикации |
 | Тип контента в stories | 57% фото, 43% видео [[10]](https://www.socialinsider.io/social-media-benchmarks/instagram-stories-benchmarks/) | Распределение контента в сторис |
 | Кол-во подписчиков | 1k - 10k [[9]](https://mention.com/en/reports/instagram/followers/) | Медианное значение кол-ва подписчиков на один аккаунт |
+| Просмотр Reels | 30% [[12]](https://www.outfame.com/blog/instagram-reels-statistics/) | Процент проведенный за просмотр Reels относительно всего времени, проведенного в приложении |
+| Просмотр Stories | 20% [[12]](https://backlinko.com/instagram-users/) | Процент проведенный за просмотр Stories относительно всего времени, проведенного в приложении |
+| Скролл ленты | 35% [[12]](https://backlinko.com/instagram-users/) | Процент проведенный за скроллом ленты относительно всего времени, проведенного в приложении
+| Время в Instagram | 33.9 минут [[12]](https://backlinko.com/instagram-users/) | Время проведенное пользователем в Instagram за день в среднем |
+| Кол-во постов в неделю | 2 [[14]](https://xtendedview.com/instagram-marketing-statistics/) | Кол-во постов в неделю для аккаунтов с количеством подписчиков < 10 тыс. |
 
 # 2. Расчет нагрузки
 
@@ -43,11 +46,11 @@
 | MAU | 3 млрд [[2]](https://www.statista.com/statistics/272014/global-social-networks-ranked-by-number-of-users/) |
 | DAU | 500 млн [[3]](https://www.demandsage.com/instagram-statistics/) |
 | Средний размер хранилища пользователя | 118.42 Гб |
-| Среднее количество действий пользователя в день |  |
+| Среднее количество действий пользователя в день | 182.09 |
 
 ### Средний размер хранилища пользователя
 Исходя из [[2]](https://www.statista.com/statistics/272014/global-social-networks-ranked-by-number-of-users/) и [[3]]( https://www.demandsage.com/instagram-statistics/) посчитаем средний возраст одного аккаунта Instagram
-| Год | Число аккаунтов | Разница с предыдущим годом | Возраст |
+| Год | Число пользователей | Разница с предыдущим годом | Возраст |
 | :--- | :--- | :--- | :--- |
 | 2013 | 110 млн | 110 млн | 13 лет |
 | 2014 | 200 млн | 90 млн | 12 лет |
@@ -80,6 +83,19 @@ $$
 | Stories | 17 [[10]](https://www.socialinsider.io/social-media-benchmarks/instagram-stories-benchmarks/) | 65.13 Мб | 5.793 | 1181.77 | 76.97 Гб | Кол-во Мб: 1.1 Мб * 0.57 + 150 Мб * 0.43 (раздел 1.4) |
 | **Итого** |  |  |  | **2079.92** | **118.42 Гб** |
 
+### Среднее количество действий пользователя в день
+| Действие | Среднее, шт | Пояснение
+| :--- | :--- | :--- |
+| Вход/загрузка ленты | 7 [[11]](https://afftank.com/blog/instagram-statistics/) | - |
+| Просмотр постов | 71.19 | 35% времени на ленту из общего времени 33.9 минут (раздел 1.4). Один пост до 10 секунд |
+| Просмотр Reels | 30 | 30% времени на Reels из общего времени 33.9 минут (раздел 1.4). Один Reels 15-20 секунд |
+| Просмотр Stories | 52.9 | 20% времени на Stories из общего времени 33.9 минут (раздел 1.4). Одна Stories 5-7 секунд |
+| Лайки и комментарии | 20 [[13]](https://eathealthy365.com/how-many-daily-likes-does-instagram-really-get/) | - |
+| Публикация фото | 0.3 | Из расчета 9.01 в месяц |
+| Публиакция Reels | 0.13 | Из расчета 3.91 в месяц |
+| Публикация Stories | 0,57 | Из расчета 17 в месяц |
+| **Итого** | **182.09** |
+
 ## Источники
 
 1. https://datareportal.com/reports/digital-2022-instagram-headlines?rq=instagram
@@ -92,3 +108,7 @@ $$
 8. https://ru.tipard.com/video/crop-video-in-instagram.html
 9. https://mention.com/en/reports/instagram/followers/
 10. https://www.socialinsider.io/social-media-benchmarks/instagram-stories-benchmarks/
+11. https://afftank.com/blog/instagram-statistics/
+12. https://backlinko.com/instagram-users/
+13. https://eathealthy365.com/how-many-daily-likes-does-instagram-really-get/
+14. https://xtendedview.com/instagram-marketing-statistics/
