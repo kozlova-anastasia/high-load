@@ -40,7 +40,7 @@
 # 2. Расчет нагрузки
 
 ## 2.1 Продуктовые метрики
-### Итоговая сводная таблица
+### Сводная таблица
 | Метрика | Значение |
 | :--- | :--- |
 | MAU | 3 млрд [[2]](https://www.statista.com/statistics/272014/global-social-networks-ranked-by-number-of-users/) |
@@ -97,8 +97,168 @@ $$
 | **Итого** | **182.09** |
 
 ## 2.2 Технические метрики
-### Хранилище
+### Сводная таблица
+| Метрика | Значение |
+| :--- | :--- |
+| Хранилище | 118.96 Эб |
+| Суммарный суточный трафик | 1353.95 Пб |
+| Средняя нагрузка | 125 365 Гбит/с |
+| Пиковая нагрузка | 376 095 Гбит/с |
+| RPS (средний) | 1 053 819 |
+| RPS (пиковый, ×3) | 3 161 457 |
 
+### Хранилище
+Для 3 мдрд активных пользователей [[2]](https://www.statista.com/statistics/272014/global-social-networks-ranked-by-number-of-users/)
+| Тип данных | Значение для одного пользователя, шт | Значение для одного пользователя | Общее значение, млрд шт | Общее значение, Пб |
+| :--- | :--- | :--- | :--- | :--- |
+| Фото | 626.34 | 313.17 Мб | 1879.02 | 939.51 | 
+| Видео | 271.81 | 13.6 Гб | 815.43 | 40800 |
+| Stories | 1181.77 | 25.74 Гб | 3545.31 | 77220 |
+| **Итого** |  |  | **6.239 трлн** | **118.96 Эб** |  
+
+### Сетевой трафик
+Суточный трафик на 500 млн пользователей [[3]](https://www.demandsage.com/instagram-statistics/). Пиковую нагрзуку возьмем ×3 относительно средней нагрузки [[15]](https://www.designgurus.io/answers/detail/how-do-you-estimate-capacity-rpsstoragebandwidth-for-a-social-app)
+
+<table>
+  <tr>
+    <td rowspan="4"><strong>Трафик на скачивание контента</strong></td>
+    <td><strong>Действие</strong></td>
+    <td><strong>Суточный объем, Пб</strong></td>
+    <td><strong>Средняя нагрузка, Гбит/с</strong></td>
+    <td><strong>Пиковая нагрузка (×3), Гбит/с</strong></td>
+    <td><strong>Расчет</strong></td>
+  </tr>
+  <tr>
+    <td>Просмотр ленты</td>
+    <td>17.8</td>
+    <td>1648</td>
+    <td>4944</td>
+    <td>500 млн * 71.19 * 0.5 Мб</td>
+  </tr>
+  <tr>
+    <td>Просмотр Reels</td>
+    <td>750</td>
+    <td>69 444</td>
+    <td>208 322</td>
+    <td>500 млн * 30 * 50 Мб</td>
+  </tr>
+  <tr>
+    <td>Просмотр Stories</td>
+    <td>576.61</td>
+    <td>53 390</td>
+    <td>160 170</td>
+    <td>500 млн * 52.9 * 21.8 Мб</td>
+  </tr>
+  <tr>
+    <td rowspan="3"><strong>Трафик на загрузку контента</strong></td>
+    <td>Публикация фото</td>
+    <td>0.075</td>
+    <td>6.94</td>
+    <td>20.82</td>
+    <td>500 млн * 0.3 * 0.5 Мб</td>
+  </tr>
+  <tr>
+    <td>Публикация Reels</td>
+    <td>3.25</td>
+    <td>300.9</td>
+    <td>902.7</td>
+    <td>500 млн * 0.13 * 50 Мб</td>
+  </tr>
+  <tr>
+    <td>Просмотр Stories</td>
+    <td>6.21</td>
+    <td>575</td>
+    <td>1725</td>
+    <td>500 млн * 0.57 * 21.8 Мб</td>
+  </tr>
+  <tr>
+    <td><strong>Итого</strong></td>
+    <td></td>
+    <td><strong>1353.95</strong></td>
+    <td><strong>125 365</strong></td>
+    <td><strong>376 095</strong></td>
+    <td></td>
+  </tr>
+</table>
+
+### RPS
+
+Вот таблица с расчетом RPS, переписанная в нужном формате. Обратите внимание: в строках с просмотром контента теперь указано количество *запросов*, а не объем трафика в Мб (как это было в вашем примере-шаблоне, где случайно смешались метрики). Данные соответствуют суточным значениям из раздела 2.1.
+
+<table>
+  <tr>
+    <td rowspan="5"><strong>Запросы на чтение</strong></td>
+    <td><strong>Действие</strong></td>
+    <td><strong>Суточное количество</strong></td>
+    <td><strong>RPS (средний)</strong></td>
+    <td><strong>RPS (пиковый, ×3)</strong></td>
+    <td><strong>Расчет</strong></td>
+  </tr>
+  <tr>
+    <td>Вход/загрузка ленты</td>
+    <td>3.5 млрд</td>
+    <td>40 509</td>
+    <td>121 527</td>
+    <td>500 млн * 7</td>
+  </tr>
+  <tr>
+    <td>Просмотр постов (лента)</td>
+    <td>35.6 млрд</td>
+    <td>412 037</td>
+    <td>1 236 111</td>
+    <td>500 млн * 71.19</td>
+  </tr>
+  <tr>
+    <td>Просмотр Reels</td>
+    <td>15 млрд</td>
+    <td>173 611</td>
+    <td>520 833</td>
+    <td>500 млн * 30</td>
+  </tr>
+  <tr>
+    <td>Просмотр Stories</td>
+    <td>26.45 млрд</td>
+    <td>306 134</td>
+    <td>918 402</td>
+    <td>500 млн * 52.9</td>
+  </tr>
+  <tr>
+    <td rowspan="4"><strong>Запросы на запись</strong></td>
+    <td>Лайки и комментарии</td>
+    <td>10 млрд</td>
+    <td>115 741</td>
+    <td>347 223</td>
+    <td>500 млн * 20</td>
+  </tr>
+  <tr>
+    <td>Публикация фото</td>
+    <td>150 млн</td>
+    <td>1 736</td>
+    <td>5 208</td>
+    <td>500 млн * 0.3</td>
+  </tr>
+  <tr>
+    <td>Публикация Reels</td>
+    <td>65 млн</td>
+    <td>752</td>
+    <td>2 256</td>
+    <td>500 млн * 0.13</td>
+  </tr>
+  <tr>
+    <td>Публикация Stories</td>
+    <td>285 млн</td>
+    <td>3 299</td>
+    <td>9 897</td>
+    <td>500 млн * 0.57</td>
+  </tr>
+  <tr>
+    <td colspan="2"><strong>Итого</strong></td>
+    <td><strong>91.05 млрд</strong></td>
+    <td><strong>1 053 819</strong></td>
+    <td><strong>3 161 457</strong></td>
+    <td></td>
+  </tr>
+</table>
 
 ## Источники
 
@@ -116,3 +276,4 @@ $$
 12. https://backlinko.com/instagram-users/
 13. https://eathealthy365.com/how-many-daily-likes-does-instagram-really-get/
 14. https://xtendedview.com/instagram-marketing-statistics/
+15. https://www.designgurus.io/answers/detail/how-do-you-estimate-capacity-rpsstoragebandwidth-for-a-social-app
