@@ -258,6 +258,74 @@ $$
   </tr>
 </table>
 
+# 3. Глобальная балансировка нагрузки
+## 3.1 Разбиение по доменам
+| Домен | Функциональность |
+| :--- | :--- | 
+| api.social.com | Лента, посты, лайки, stories metadata, пользователи | 
+| cdn.social.com | Фото, reels, stories | 
+| upload.social.com | Загрузка контента |
+
+## 3.2 Расположение ДЦ
+Согласно [[16]](https://www.theglobalstatistics.com/instagram-global-users-statistics) распределение аудитории в Instagram происходит неравномерно. Большая часть (~50%) приходится на Азию, а следующий по количество пользователей регион - Америка. Тогда, исходя из этих данных расположение основных ДЦ выглядит так:
+| Регион | Город, страна | Обоснование |
+| :--- | :--- | :--- |
+| Северная Америка | Ашберн, США | крупнейший интернет-хаб, низкая latency по США |
+| Южная Америка | Сан-Паулу, Бразилия | крупнейший рынок региона, развитая инфраструктура |
+| Европа | Франкфурт, Германия | главный интернет-хаб Европы (DE-CIX), центр EU трафика |
+| Южная Азия | Мумбаи, Индия | низкая latency для Индии |
+| Юго-восточная Азия | Сингапур | ключевой хаб Юго-Восточной Азии |
+| Восточная Азия | Токио, Япония | развитая инфраструктура, покрытие Японии/Кореи |
+| Африка | Йоханнесбург, ЮАР | основной интернет-хаб Африки |
+| Океания | Сидней, Австралия | покрытие Австралии и региона |
+
+
+## 3.3 Схема глобальной балансировки до ДЦ
+```mermaid
+flowchart LR
+U[Пользователь]
+%% Домены
+U --> API[api.social.com]
+U --> UPLOAD[upload.social.com]
+U --> CDN[cdn.social.com]
+%% DNS балансировка
+API --> DNS1[Geo DNS]
+UPLOAD --> DNS2[Geo DNS]
+DNS1 -->|"EU → Frankfurt"| DC_EU[DC: Frankfurt]
+DNS1 -->|"US → Ashburn"| DC_US[DC: Ashburn]
+DNS1 -->|"India → Mumbai"| DC_IN[DC: Mumbai]
+DNS1 -->|"SEA → Singapore"| DC_SG[DC: Singapore]
+DNS1 -->|"East Asia → Tokyo"| DC_TK[DC: Tokyo]
+DNS1 -->|"SA → São Paulo"| DC_BR[DC: São Paulo]
+DNS1 -->|"Africa → Johannesburg"| DC_AF[DC: Johannesburg]
+DNS1 -->|"Oceania → Sydney"| DC_AU[DC: Sydney]
+DNS2 -->|"ближайший регион"| DC_EU
+DNS2 --> DC_US
+DNS2 --> DC_IN
+DNS2 --> DC_SG
+DNS2 --> DC_TK
+DNS2 --> DC_BR
+DNS2 --> DC_AF
+DNS2 --> DC_AU
+%% CDN Anycast
+CDN --> ANYCAST[Anycast routing (BGP)]
+ANYCAST --> EDGE[CDN Edge (PoP)]
+EDGE -->|"cache hit"| U
+EDGE -->|"cache miss → origin"| ORIGIN[Ближайший DC]
+ORIGIN --> DC_EU
+ORIGIN --> DC_US
+ORIGIN --> DC_IN
+ORIGIN --> DC_SG
+ORIGIN --> DC_TK
+ORIGIN --> DC_BR
+ORIGIN --> DC_AF
+ORIGIN --> DC_AU
+%% Failover
+DNS1 -.->|"failover / weights"| DC_US
+DNS2 -.->|"failover"| DC_EU
+EDGE -.->|"origin failover"| ORIGIN
+```
+
 ## Источники
 
 1. https://datareportal.com/reports/digital-2022-instagram-headlines?rq=instagram
@@ -275,3 +343,4 @@ $$
 13. https://eathealthy365.com/how-many-daily-likes-does-instagram-really-get/
 14. https://xtendedview.com/instagram-marketing-statistics/
 15. https://www.designgurus.io/answers/detail/how-do-you-estimate-capacity-rpsstoragebandwidth-for-a-social-app
+16. https://www.theglobalstatistics.com/instagram-global-users-statistics
