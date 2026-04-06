@@ -294,44 +294,20 @@ flowchart LR
     API --> DNS1[Geo DNS]
     UPLOAD --> DNS2[Geo DNS]
 
-    DNS1 -->|EU to Frankfurt| DC_EU[DC Frankfurt]
-    DNS1 -->|US to Ashburn| DC_US[DC Ashburn]
-    DNS1 -->|India to Mumbai| DC_IN[DC Mumbai]
-    DNS1 -->|SEA to Singapore| DC_SG[DC Singapore]
-    DNS1 -->|East Asia to Tokyo| DC_TK[DC Tokyo]
-    DNS1 -->|SA to Sao Paulo| DC_BR[DC Sao Paulo]
-    DNS1 -->|Africa to Johannesburg| DC_AF[DC Johannesburg]
-    DNS1 -->|Oceania to Sydney| DC_AU[DC Sydney]
-
-    DNS2 -->|nearest region| DC_EU
-    DNS2 --> DC_US
-    DNS2 --> DC_IN
-    DNS2 --> DC_SG
-    DNS2 --> DC_TK
-    DNS2 --> DC_BR
-    DNS2 --> DC_AF
-    DNS2 --> DC_AU
+    DNS1 --> DC[Nearest DC]
+    DNS2 --> DC
 
     %% CDN Anycast
     CDN --> ANYCAST[Anycast routing]
     ANYCAST --> EDGE[CDN Edge]
 
     EDGE -->|cache hit| U
-    EDGE -->|cache miss to origin| ORIGIN[Nearest DC]
+    EDGE -->|cache miss| DC
 
-    ORIGIN --> DC_EU
-    ORIGIN --> DC_US
-    ORIGIN --> DC_IN
-    ORIGIN --> DC_SG
-    ORIGIN --> DC_TK
-    ORIGIN --> DC_BR
-    ORIGIN --> DC_AF
-    ORIGIN --> DC_AU
-
-    %% Failover
-    DNS1 -.->|failover or weights| DC_US
-    DNS2 -.->|failover| DC_EU
-    EDGE -.->|origin failover| ORIGIN
+    %% Failover (логика)
+    DNS1 -.->|failover| DC
+    DNS2 -.->|failover| DC
+    EDGE -.->|origin fallback| DC
 ```
 
 ## Источники
