@@ -279,16 +279,16 @@ $$
 Размещение ДЦ вблизи крупнейших регионов присутствия аудитории позволяет снизить задержку для основных пользовательских сценариев: загрузка ленты, просмотр stories и reels, публикация контента. Это положительно влияет на DAU, среднее время, проведенное в приложении, а также снижает вероятность отказа при загрузке фото и видео.
 
 ## 3.3 Распределение запросов по типам по ДЦ
-| Тип запроса         | Глобальный средний RPS | Принцип распределения по ДЦ                                   |
-| :------------------ | :--------------------: | :------------------------------------------------------------ |
-| Загрузка ленты      |         40 509         | по Geo DNS пропорционально доле аудитории региона             |
-| Просмотр постов     |         412 037        | по Geo DNS пропорционально доле аудитории региона             |
-| Просмотр Reels      |         173 611        | metadata через `api.social.com`, медиа через `cdn.social.com` |
-| Просмотр Stories    |         306 134        | metadata через `api.social.com`, медиа через `cdn.social.com` |
-| Лайки и комментарии |         115 741        | по Geo DNS в ближайший ДЦ                                     |
-| Публикация фото     |          1 736         | через `upload.social.com` в ближайший ДЦ                      |
-| Публикация Reels    |           752          | через `upload.social.com` в ближайший ДЦ                      |
-| Публикация Stories  |          3 299         | через `upload.social.com` в ближайший ДЦ                      |
+| Тип запроса | Глобальный средний RPS | Принцип распределения по ДЦ | Технический домен |
+| :--- | :--------------------: | :------------------------------------------------------------ | :--- |
+| Загрузка ленты | 40 509 | Geo DNS → ближайший ДЦ | `api.social.com` |
+| Просмотр постов (лента) | 412 037 | Geo DNS → ближайший ДЦ | `api.social.com` |
+| Просмотр Reels | 173 611 | Metadata: Geo DNS → ближайший ДЦ<br>Media: CDN Anycast → ближайшая edge-нода | `api.social.com` + `cdn.social.com` |
+| Просмотр Stories | 306 134 | Metadata: Geo DNS → ближайший ДЦ<br>Media: CDN Anycast → ближайшая edge-нода | `api.social.com` + `cdn.social.com` |
+| Лайки и комментарии | 115 741 | Geo DNS → ближайший ДЦ | `api.social.com` |
+| Публикация фото | 1 736 | Geo DNS → ближайший ДЦ | `upload.social.com` |
+| Публикация Reels | 752 | Geo DNS → ближайший ДЦ | `upload.social.com` |
+| Публикация Stories | 3 299 | Geo DNS → ближайший ДЦ | `upload.social.com` |
 
 
 ## 3.4 Схема глобальной балансировки
@@ -325,6 +325,66 @@ flowchart LR
     DNS1 -.->|failover| DC
     DNS2 -.->|failover| DC
     EDGE -.->|origin fallback| DC
+```
+# 4. Локальная балансировка нагрузки
+## 4.1. Схема локальной балансировки
+```mermaid
+flowchart LR
+    U[Пользователь]
+
+    subgraph DNS[Глобальная маршрутизация]
+        GEO[Geo DNS]
+    end
+
+    subgraph DC[Дата-центр]
+        subgraph L4[L4 Балансировка]
+            L4_1[L4 Balancer 1]
+            L4_2[L4 Balancer 2]
+            L4_3[L4 Balancer N+1]
+        end
+
+        subgraph L7[L7 Балансировка]
+            NGX1[NGINX 1]
+            NGX2[NGINX 2]
+            NGXN[NGINX N+1]
+        end
+
+        subgraph SVC[Сервисы]
+            API[API Gateway]
+            UPLOAD[Upload Service]
+        end
+    end
+
+    subgraph CDN[CDN]
+        EDGE[Edge Nodes]
+    end
+
+    U --> GEO
+    U --> EDGE
+
+    GEO --> L4_1
+    GEO --> L4_2
+
+    L4_1 --> NGX1
+    L4_1 --> NGX2
+    L4_2 --> NGX1
+    L4_2 --> NGX2
+
+    L4_1 -.->|failover| L4_3
+    L4_2 -.->|failover| L4_3
+    L4_3 --> NGXN
+
+    NGX1 --> API
+    NGX2 --> UPLOAD
+    NGX1 --> UPLOAD
+    NGX2 --> API
+
+    NGX1 -.->|failover| NGXN
+    NGX2 -.->|failover| NGXN
+    NGXN --> API
+    NGXN --> UPLOAD
+
+    EDGE --> U
 ```
 
 ## Источники
