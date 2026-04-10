@@ -300,7 +300,7 @@ $$
 
 Для каждого пользователя определяется основной регион. Все операции записи выполняются в этом регионе. Репликация между регионами осуществляется асинхронно, что позволяет обеспечить высокую масштабируемость системы. Используется модель eventual consistency
 
-![alt text](<Untitled Diagram.drawio.png>)
+![alt text](image.png)
 
 # 4. Локальная балансировка нагрузки
 ## 4.1. Схема локальной балансировки
@@ -310,79 +310,20 @@ $$
 
 Для снижения нагрузки на CPU при установке TLS-соединений используется механизм SSL Session Tickets
 
-```mermaid
-flowchart LR
-    U[Пользователь]
-
-    subgraph DNS[Глобальная маршрутизация]
-        GEO[Geo DNS]
-    end
-
-    subgraph DC[Дата-центр]
-        subgraph L4[L4 Балансировка]
-            L4_1[L4 Balancer 1]
-            L4_2[L4 Balancer 2]
-            L4_3[L4 Balancer N+1]
-        end
-
-        subgraph L7[L7 Балансировка]
-            NGX1[NGINX 1]
-            NGX2[NGINX 2]
-            NGXN[NGINX N+1]
-        end
-
-        subgraph SVC[Сервисы]
-            API[API Gateway]
-            UPLOAD[Upload Service]
-        end
-    end
-
-    subgraph CDN[CDN]
-        EDGE[Edge Nodes]
-    end
-
-    U --> GEO
-    U --> EDGE
-
-    GEO --> L4_1
-    GEO --> L4_2
-
-    L4_1 --> NGX1
-    L4_1 --> NGX2
-    L4_2 --> NGX1
-    L4_2 --> NGX2
-
-    L4_1 -.->|failover| L4_3
-    L4_2 -.->|failover| L4_3
-    L4_3 --> NGXN
-
-    NGX1 --> API
-    NGX2 --> UPLOAD
-    NGX1 --> UPLOAD
-    NGX2 --> API
-
-    NGX1 -.->|failover| NGXN
-    NGX2 -.->|failover| NGXN
-    NGXN --> API
-    NGXN --> UPLOAD
-
-    EDGE --> U
-```
+![alt text](image-1.png)
 
 ## 4.2. Расчет количество балансировщиков
 
 ### Характеристики для расчета
 
-Характеристики системы берутся из предыдущих разделов. Характеристики сети и Nginx [[17]](https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers) и [[18]](https://yandex.cloud/ru/services/baremetal)
+Характеристики системы берутся из предыдущих разделов. Характеристики сети и Nginx [[17]](https://blog.nginx.org/blog/testing-performance-nginx-ingress-controller-kubernetes) и [[18]](https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers)
 
 | Характеристика | Значение |
 | :--- | :--- |
 | Пиковая суммарная нагрузка | 55 168 Гбит/с |
 | Пиковый суммарный RPS | 3 161 457 |
-| Пропускная способность сети 1 сервера | 50 Гбит/с | 
-| Производительность NGINX (HTTPS) | ~100 000 RPS |
-| Потери пропускной способности на SSL/TLS | 12% |
-| Эффективная пропускная способность 1 сервера | 44 Гбит/с | 
+| Пропускная способность сети 1 сервера | 24 Гбит/с | 
+| HTTPS RPS  | 342 785 |
 
 ### Формула расчета
 
@@ -394,21 +335,21 @@ $$
 
 | Метрика | Формула | Значение |
 | :--- | :---: | :---: |
-| Потребность по пропускной способности | 55 168 / 44 | 1 254 сервера |
-| Потребность по RPS | 3 161 457 / 100 000 | 32 сервера |
-| **Базовое количество (N)** | max(1254, 32) | **1 254** |
+| Потребность по пропускной способности | 55 168 / 24 | 2 298 серверов |
+| Потребность по RPS | 3 161 457 / 342 785 | 9 серверов |
+| **Базовое количество (N)** | max(2 298, 9) | **2 298** |
 | Резервирование | N+1 на пул | +1 |
-| **Итого серверов NGINX (все ДЦ)** | | **1 255** |
+| **Итого серверов NGINX (все ДЦ)** | | **2 303** |
 
 ### Распределение серверов NGINX по дата-центрам
 
 | Регион | Локация | % трафика | Серверов NGINX |
 | :--- | :--- | :---: | :---: | 
-| Северная Америка | Ашберн, США | 11 | 139 |
-| Южная Америка | Сан-Паулу, Бразилия | 14 | 176 |
-| Европа | Франкфурт, Германия | 19 | 239 |
-| Южная Азия | Мумбаи, Индия | 28 | 352 |
-| Юго-Восточная Азия | Сингапур | 25 | 314 |
+| Северная Америка | Ашберн, США | 11 | 253 |
+| Южная Америка | Сан-Паулу, Бразилия | 14 | 322 |
+| Европа | Франкфурт, Германия | 19 | 437 |
+| Южная Азия | Мумбаи, Индия | 28 | 644 |
+| Юго-Восточная Азия | Сингапур | 25 | 576 |
 
 
 ## Источники
@@ -429,5 +370,5 @@ $$
 14. https://xtendedview.com/instagram-marketing-statistics/
 15. https://www.designgurus.io/answers/detail/how-do-you-estimate-capacity-rpsstoragebandwidth-for-a-social-app
 16. https://www.theglobalstatistics.com/instagram-global-users-statistics
-17. https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers
-18. https://yandex.cloud/ru/services/baremetal
+17. https://blog.nginx.org/blog/testing-performance-nginx-ingress-controller-kubernetes
+18. https://blog.nginx.org/blog/testing-the-performance-of-nginx-and-nginx-plus-web-servers
