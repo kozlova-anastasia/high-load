@@ -300,34 +300,8 @@ $$
 
 Для каждого пользователя определяется основной регион. Все операции записи выполняются в этом регионе. Репликация между регионами осуществляется асинхронно, что позволяет обеспечить высокую масштабируемость системы. Используется модель eventual consistency
 
-```mermaid
-flowchart LR
-    U[Пользователь]
+![alt text](<Untitled Diagram.drawio.png>)
 
-    %% Домены
-    U --> API[api.social.com]
-    U --> UPLOAD[upload.social.com]
-    U --> CDN[cdn.social.com]
-
-    %% DNS балансировка
-    API --> DNS1[Geo DNS]
-    UPLOAD --> DNS2[Geo DNS]
-
-    DNS1 --> DC[Nearest DC]
-    DNS2 --> DC
-
-    %% CDN Anycast
-    CDN --> ANYCAST[Anycast routing]
-    ANYCAST --> EDGE[CDN Edge]
-
-    EDGE -->|cache hit| U
-    EDGE -->|cache miss| DC
-
-    %% Failover (логика)
-    DNS1 -.->|failover| DC
-    DNS2 -.->|failover| DC
-    EDGE -.->|origin fallback| DC
-```
 # 4. Локальная балансировка нагрузки
 ## 4.1. Схема локальной балансировки
 Поскольку большинство облачных провайдеров предоставляют управляемые сервисы L4-балансировки было принято решение отказаться от развертывания собственных и использовать облачные решения 
