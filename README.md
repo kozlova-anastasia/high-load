@@ -406,6 +406,370 @@ $$
 
 # 6. Физическая схема БД
 
+![alt text](image-3.png)
+
+## 6.1. Распределение таблиц по СУБД, шардирование и резервирование
+
+| Таблица | СУБД | Шардирование | Резервирование | Комментарии |
+| :--- | :--- | :--- | :--- | :--- |
+| `users` | PostgreSQL | По id | 1 master + 2 replicas | Основная таблица, все остальные ссылаются на неё. Collocated с `user_sessions`, `user_counters` |
+| `user_sessions` | PostgreSQL | По user_id (collocated с `users`) | Аналогично `users`: 1 master + 2 replicas | Collocated с `users` |
+| `user_graph` | PostgreSQL | По `following_id` | 1 master + 2 replicas | Шард по following_id - запрос "кто подписан на пользователя X?" выполняется на одном шарде |
+| `user_counters` | Redis (hot) -> PostgreSQL (durable) | Redis: hash-slot по user_id; PG: по user_id (collocated с `users`) | Redis: 3 master + 3 replica (Redis); PG: 1 master + 2 replicas | Redis хранит горячие счётчики. Flusher каждые 10 сек пишет дельту в PG. При Redis miss - fallback на PG |
+| `posts` | PostgreSQL | По author_id (collocated с `users`) | 1 master + 2 replicas | Collocated с `post_media`, `media`: по author_id - пост собирается на одном шарде. Soft delete через is_deleted |
+| `post_media` | PostgreSQL | По author_id из связанного `posts` (collocated) | Аналогично `posts` | Связующая таблица пост - медиа |
+| `media` | PostgreSQL (метаданные) + S3 (файлы) | По uploader_id | PG: 1 master + 2 replicas |  |
+| `post_likes` | PostgreSQL | По post_id | 1 master + 2 replicas | Запись через Kafka (не напрямую из API) |
+| `post_counters` | Redis (hot) -> PostgreSQL (durable) | Redis: hash-slot по post_id; PG: по post_id | Redis: 3 master + 3 replica; PG: 1 master + 2 replicas | Аналогично `user_counters` |
+| `locations` | PostgreSQL | Reference table - полная копия на каждом шарде | Копируется автоматически на все worker-nodes | Маленькая справочная таблица |
+| `stories` | PostgreSQL | По author_id (hash, collocated с `users`) | 1 master + 2 replicas | Партиционирование по created_at (monthly) для быстрого удаления старых данных |
+| `story_views` | PostgreSQL | По story_id | 1 master + 2 replicas |  |
+| `feed_cache` | Redis | Hash-slot по `user_id` | 3 master + 3 replica |  |
+| `interactions_buffer` | Kafka | Ключ партиционирования post_id | 3 брокера × replication factor 3 |  |
+| `user_interactions_log` | ClickHouse | Партиции по месяцам; шардирование на 8+ шардов | 3 реплики на каждый шард; ежедневный backup в S3 |  |
+
+## 6.2. Индексы
+
+<table>
+  <tr>
+    <th>Сущность (таблица)</th>
+    <th>Индекс / структура</th>
+    <th>Тип</th>
+    <th>Unique</th>
+    <th>Описание</th>
+  </tr>
+
+  <tr>
+    <td rowspan="6"><strong>users</strong></td>
+    <td><code>pk_users</code></td>
+    <td>B-Tree (PK)</td>
+    <td>Да</td>
+    <td>Shard key id, основной поиск, JOIN-ы</td>
+  </tr>
+  <tr>
+    <td><code>uq_users_username</code></td>
+    <td>B-Tree</td>
+    <td>Да</td>
+    <td>Логин, проверка уникальности</td>
+  </tr>
+  <tr>
+    <td><code>uq_users_email</code></td>
+    <td>B-Tree</td>
+    <td>Да</td>
+    <td>Регистрация, проверка уникальности</td>
+  </tr>
+  <tr>
+    <td><code>idx_users_avatar_media</code></td>
+    <td>B-Tree</td>
+    <td></td>
+    <td>Подтягивание аватарки из media</td>
+  </tr>
+  <tr>
+    <td><code>idx_users_created_at</code></td>
+    <td>B-Tree</td>
+    <td></td>
+    <td>Сортировка новых пользователей, аналитика</td>
+  </tr>
+  <tr>
+    <td><code>idx_users_is_verified</code></td>
+    <td>B-Tree (partial)</td>
+    <td></td>
+    <td>WHERE is_verified = true - фильтр верифицированных</td>
+  </tr>
+
+  <tr>
+    <td rowspan="5"><strong>user_sessions</strong></td>
+    <td><code>pk_user_sessions</code></td>
+    <td>B-Tree (PK)</td>
+    <td>Да</td>
+    <td>Основной ключ</td>
+  </tr>
+  <tr>
+    <td><code>idx_sessions_user_id</code></td>
+    <td>B-Tree</td>
+    <td></td>
+    <td>Все сессии пользователя, collocated JOIN с users</td>
+  </tr>
+  <tr>
+    <td><code>uq_sessions_refresh_token</code></td>
+    <td>B-Tree</td>
+    <td>Да</td>
+    <td>Валидация refresh token при обновлении JWT</td>
+  </tr>
+  <tr>
+    <td><code>idx_sessions_expires</code></td>
+    <td>B-Tree (partial)</td>
+    <td></td>
+    <td>WHERE NOT is_revoked - cron удаления истёкших сессий</td>
+  </tr>
+  <tr>
+    <td><code>idx_sessions_user_active</code></td>
+    <td>B-Tree (partial)</td>
+    <td></td>
+    <td>(user_id, is_revoked) WHERE is_revoked = false - активные сессии</td>
+  </tr>
+
+  <tr>
+    <td rowspan="5"><strong>user_graph</strong></td>
+    <td><code>pk_user_graph</code></td>
+    <td>B-Tree (PK)</td>
+    <td>Да</td>
+    <td>Основной ключ</td>
+  </tr>
+  <tr>
+    <td><code>uq_graph_pair</code></td>
+    <td>B-Tree</td>
+    <td>Да</td>
+    <td>(follower_id, following_id) - нельзя подписаться дважды</td>
+  </tr>
+  <tr>
+    <td><code>idx_graph_following_status</code></td>
+    <td>B-Tree</td>
+    <td></td>
+    <td>(following_id, status) - fanout: все подписчики X, локально на шарде</td>
+  </tr>
+  <tr>
+    <td><code>idx_graph_follower_status</code></td>
+    <td>B-Tree</td>
+    <td></td>
+    <td>(follower_id, status) - на кого подписан A (scatter-gather)</td>
+  </tr>
+  <tr>
+    <td><code>idx_graph_following_created</code></td>
+    <td>B-Tree (partial)</td>
+    <td></td>
+    <td>(following_id, created_at DESC) WHERE status='active' - новые подписчики</td>
+  </tr>
+
+  <tr>
+    <td rowspan="2"><strong>user_counters</strong></td>
+    <td><code>pk_user_counters</code></td>
+    <td>B-Tree (PK)</td>
+    <td>Да</td>
+    <td>user_id - 1:1 с users</td>
+  </tr>
+  <tr>
+    <td><code>cnt:u:{user_id}</code></td>
+    <td>Redis Hash</td>
+    <td></td>
+    <td>горячие счетчики</td>
+  </tr>
+
+  <tr>
+    <td rowspan="6"><strong>posts</strong></td>
+    <td><code>pk_posts</code></td>
+    <td>B-Tree (PK)</td>
+    <td>Да</td>
+    <td>Основной поиск, FK из post_media, post_likes</td>
+  </tr>
+  <tr>
+    <td><code>idx_posts_author_created</code></td>
+    <td>B-Tree (partial)</td>
+    <td></td>
+    <td>(author_id, created_at DESC) WHERE NOT is_deleted - профиль, лента</td>
+  </tr>
+  <tr>
+    <td><code>idx_posts_location</code></td>
+    <td>B-Tree (partial)</td>
+    <td></td>
+    <td>(location_id) WHERE location_id IS NOT NULL - быстрый поиск по геолокации</td>
+  </tr>
+  <tr>
+    <td><code>idx_posts_content_type</code></td>
+    <td>B-Tree</td>
+    <td></td>
+    <td>(author_id, content_type) - фильтр видео/фото в профиле</td>
+  </tr>
+  <tr>
+    <td><code>idx_posts_created_global</code></td>
+    <td>B-Tree (partial)</td>
+    <td></td>
+    <td>(created_at DESC) WHERE NOT is_deleted - глобальная лента/тренды</td>
+  </tr>
+  <tr>
+    <td><code>idx_posts_updated_at</code></td>
+    <td>B-Tree</td>
+    <td></td>
+    <td>pdated_at - отслеживает изменения</td>
+  </tr>
+
+  <tr>
+    <td rowspan="1"><strong>post_media</strong></td>
+    <td><code>pk_post_media</code></td>
+    <td>B-Tree (PK)</td>
+    <td>Да</td>
+    <td>Основной ключ</td>
+  </tr>
+
+<tr>
+    <td rowspan="5"><strong>media</strong></td>
+    <td><code>pk_media</code></td>
+    <td>B-Tree (PK)</td>
+    <td>Да</td>
+    <td>id - основной поиск по ID</td>
+</tr>
+<tr>
+    <td><code>idx_media_uploader_created</code></td>
+    <td>B-Tree</td>
+    <td></td>
+    <td>uploader_id, created_at DESC - все медиа пользователя (галерея), collocated с users</td>
+</tr>
+<tr>
+    <td><code>uq_media_sha256</code></td>
+    <td>B-Tree (partial)</td>
+    <td>Да</td>
+    <td>WHERE sha256_hash IS NOT NULL - не загружать дубли файла</td>
+</tr>
+<tr>
+    <td><code>uq_media_s3</code></td>
+    <td>B-Tree</td>
+    <td>Да</td>
+    <td>s3_bucket, s3_key - уникальность S3-объекта</td>
+</tr>
+<tr>
+    <td><code>idx_media_created</code></td>
+    <td>B-Tree</td>
+    <td></td>
+    <td>created_at DESC - пагинация по дате, аналитика</td>
+</tr>
+
+  <tr>
+    <td rowspan="4"><strong>post_likes</strong></td>
+    <td><code>pk_post_likes</code></td>
+    <td>B-Tree (PK)</td>
+    <td>Да</td>
+    <td>Основной ключ</td>
+  </tr>
+  <tr>
+    <td><code>uq_plikes_pair</code></td>
+    <td>B-Tree</td>
+    <td>Да</td>
+    <td>(post_id, user_id) - лайк нельзя поставить дважды</td>
+  </tr>
+  <tr>
+    <td><code>idx_plikes_post</code></td>
+    <td>B-Tree</td>
+    <td></td>
+    <td>post_id - кто лайкнул пост </td>
+  </tr>
+  <tr>
+    <td><code>idx_plikes_user</code></td>
+    <td>B-Tree</td>
+    <td></td>
+    <td>user_id - все лайки юзера (scatter-gather)</td>
+  </tr>
+
+  <tr>
+    <td rowspan="2"><strong>post_counters</strong></td>
+    <td><code>pk_post_counters</code></td>
+    <td>B-Tree (PK)</td>
+    <td>Да</td>
+    <td>post_id</td>
+  </tr>
+  <tr>
+    <td>cnt:p:{post_id}</td>
+    <td>Redis Hash</td>
+    <td></td>
+    <td>горячие счётчики</td>
+  </tr>
+
+  <tr>
+    <td rowspan="3"><strong>locations</strong></td>
+    <td><code>pk_locations</code></td>
+    <td>B-Tree (PK)</td>
+    <td>Да</td>
+    <td>Reference table - копия на каждом шарде</td>
+  </tr>
+  <tr>
+    <td><code>idx_locations_name_trgm</code></td>
+    <td>GIN</td>
+    <td></td>
+    <td>autocomplete Моск -> Москва</td>
+  </tr>
+  <tr>
+    <td><code>idx_locations_coords</code></td>
+    <td>GiST</td>
+    <td></td>
+    <td>гео-поиск "рядом со мной"</td>
+  </tr>
+
+  <tr>
+    <td rowspan="4"><strong>stories</strong></td>
+    <td><code>pk_stories</code></td>
+    <td>B-Tree (PK)</td>
+    <td>Да</td>
+    <td>Основной ключ</td>
+  </tr>
+  <tr>
+    <td><code>idx_stories_author_created</code></td>
+    <td>B-Tree (partial)</td>
+    <td></td>
+    <td>(author_id, created_at DESC) WHERE NOT is_deleted - кольцо stories</td>
+  </tr>
+  <tr>
+    <td><code>idx_stories_expires</code></td>
+    <td>B-Tree (partial)</td>
+    <td></td>
+    <td>(expires_at) WHERE NOT is_deleted - cron soft delete</td>
+  </tr>
+  <tr>
+    <td><code>idx_stories_media</code></td>
+    <td>B-Tree</td>
+    <td></td>
+    <td>какая story использует медиа</td>
+  </tr>
+
+  <tr>
+    <td rowspan="4"><strong>story_views</strong></td>
+    <td><code>pk_story_views</code></td>
+    <td>B-Tree (PK)</td>
+    <td>Да</td>
+    <td>Основной ключ</td>
+  </tr>
+  <tr>
+    <td><code>uq_sviews_pair</code></td>
+    <td>B-Tree</td>
+    <td>Да</td>
+    <td>(story_id, viewer_id) - один просмотр на юзера</td>
+  </tr>
+  <tr>
+    <td><code>idx_sviews_story_viewed</code></td>
+    <td>B-Tree</td>
+    <td></td>
+    <td>story_id - кто смотрел story</td>
+  </tr>
+  <tr>
+    <td><code>idx_sviews_viewer</code></td>
+    <td>B-Tree</td>
+    <td></td>
+    <td>viewer_id - какие stories смотрел пользователь</td>
+  </tr>
+
+  <tr>
+    <td rowspan="2"><strong>feed_cache</strong></td>
+    <td><code>feed:{user_id}</code></td>
+    <td>Redis Sorted Set</td>
+    <td></td>
+    <td>лента пользователя</td>
+  </tr>
+  <tr>
+    <td><code>like:{user_id}:{post_id}</code></td>
+    <td>Redis String (SET NX)</td>
+    <td></td>
+    <td>1 лайк от одного пользователя для одного поста</td>
+  </tr>
+</table>
+
+## 6.3. Схема резервирования
+
+| СУБД | Схема резервирования |
+| :--- | :--- |
+| **PostgreSQL (Citus)** | Полный бэкап раз в неделю + инкрементальный ежедневно. Хранение: 4 полных бэкапа |
+| **Redis Cluster** | RDB-снапшоты каждые 6 часов в S3 + AOF лог. При полной потере данные восстанавливаются из PostgreSQL. |
+| **ClickHouse** | Полный бэкап раз в неделю + инкрементальный ежедневно в S3. Данные также можно восстановить повторным чтением из Kafka |
+| **Kafka** | Встроенная репликация: 3 копии каждой партиции. Отдельный бэкап не нужен, данные временные. |
+
+
 ## Источники
 
 1. https://datareportal.com/reports/digital-2022-instagram-headlines?rq=instagram
