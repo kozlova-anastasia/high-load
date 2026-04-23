@@ -353,80 +353,68 @@ $$
 | Таблица | Описание |
 |---------|------------|
 | `users` | Основная таблица пользователей. Содержит учётные данные, профиль, флаг приватности, полнотекстовый поиск по нику (search_vector) |
-| `user_sessions` | Активные сессии пользователей. Хранит refresh-токены, информацию об устройстве, IP Поддерживает отзыв сессий (is_revoked) |
-| `user_graph` | Граф подписок. Поле status управляет подтверждением для приватных аккаунтов |
+| `follow` | Граф подписок. Поле status управляет подтверждением для приватных аккаунтов |
 | `media` | Метаданные медиафайлов, хранящихся в S3 |
+| `media_images` | Метаданные фото |
+| `media_video` | Метаданные видео |
 | `posts` | Посты пользователей. Поддерживает мягкое удаление |
+| `post_likes` | Связующая таблица между пользователями и лайками на постах |
 | `post_media` | Связующая таблица между постами и медиафайлами |
 | `locations` | Геолокации, привязанные к постам |
 | `stories` | Истории пользователей. Автоматически удаляются через 24 часа после создания (expires_at) |
 | `story_views` | Факты просмотра историй |
-| `post_likes` | Лайки к постам |
-| `post_counters` | Предрасчитанные счётчики поста |
-| `user_counters` | Предрасчитанные счётчики пользователя (посты, подписчики, подписки) |
-| `feed_cache` | Материализованная лента пользователя |
-| `interactions_buffer` | Буфер для записи действий пользователей. Используется для пакетной вставки в основную таблицу |
-| `user_interactions_log` | Основное хранилище всех взаимодействий пользователя с контентом. Используется для аналитики и обучения ML-моделей рекомендаций |
+| `interactions` | Действия пользователя (используется в аналитике) |
 
 ## 5.3. Объем хранения и нагрузка на чтение/запись
 
 | Таблица | Средний размер строки | Суммарный объём хранения | Нагрузка на запись (QPS) | Нагрузка на чтение (QPS) |
 |---------|----------------------|-------------------------|-------------------------|-------------------------|
 | `users` | 220 байт | 13.3 ГБ | 0.18 | 2 600 |
-| `user_sessions` | 227 байт | 13.7 ГБ | 2 600 | 70 000 |
-| `user_graph` | 48 байт | ~95 ГБ | 1 500 | 10 000 |
-| `media` | 768 байт | ~88 ТБ | 115 | 5 000 |
-| `posts` | 256 байт | ~1.6 ТБ | 115 | 8 000 |
-| `post_media` | 32 байт | ~240 ГБ | 230 | 8 000 |
-| `locations` | 128 байт | ~6 ГБ | 10 | 500 |
-| `stories` | 128 байт | ~15 ТБ | 220 | 15 000 |
-| `story_views` | 40 байт | ~25 ТБ | 20 000 | 15 000 |
-| `post_likes` | 40 байт | ~120 ТБ | 7 600 | 20 000 |
-| `post_counters` | 40 байт | ~16 ГБ | 7 600 | 80 000 |
-| `user_counters` | 40 байт | ~2.4 ГБ | 1 500 | 30 000 |
-| `feed_cache` | 64 байт | ~380 ГБ | 35 000 | 2 700 |
-| `interactions_buffer` | 128 байт | ~5 ГБ | 50 000 | 0 (буфер для записи) |
-| `user_interactions_log` | 96 байт | ~1.2 ПБ | 50 000 | 500 |
+| `follow` | 48 байт | 95 ГБ | 1 500 | 10 000 |
+| `media` | 330 байт | 44 ТБ | 382 | 62 000 |
+| `media_images` | 650 байт | 24.7 ТБ | 222 | 27 000 |
+| `media_video` | 70 байт | 6.2 ТБ | 160 | 31 000 |
+| `posts` | 256 байт | 1.6 ТБ | 115 | 8 000 |
+| `post_likes` | 40 байт | 120 ТБ | 7 600 | 20 000 |
+| `post_media` | 32 байт | 240 ГБ | 230 | 8 000 |
+| `locations` | 128 байт | 6 ГБ | 10 | 500 |
+| `stories` | 128 байт | 15 ТБ | 220 | 15 000 |
+| `story_views` | 40 байт | 25 ТБ | 20 000 | 15 000 |
+| `interactions` | 330 байт | 178 ТБ | 70 000 | 500 |
 
 ## 5.4. Требования к консистентности
 
 | Таблица | Требование к консистентности | Пояснение |
 |---------|---------------------------|----------|
 | `users` | strong | Профиль должен быть консистентен сразу после создания/обновления. Блокировка вступает в силу немедленно |
-| `user_sessions` | strong | Сессия валидна сразу после создания. Отзыв сессии должен сработать мгновенно |
-| `user_graph` | eventual | Инициатор видит подписку/отписку сразу. Для остальных допустимы задержки |
-| `media` | eventual | S3 - источник истины |
-| `posts` | eventual | Автор видит пост сразу. Подписчики получают через feed_cache с задержкой |
+| `follow` | eventual | Инициатор видит подписку/отписку сразу. Для остальных допустимы задержки |
+| `media` | strong | Запись media_id привязана к S3-объекту. Потеря записи = потеря ссылки на файл. Составной FK с подтаблицами требует атомарности |
+| `media_images` | strong | Создаётся в одной транзакции с media. Рассинхронизация = битые JOIN'ы |
+| `media_video` | strong | Аналогично media_images. Транзакционная связка с media |
+| `posts` | eventual | Автор видит пост сразу. Подписчики могут получать пост с задержкой |
 | `post_media` | eventual | Связан с posts |
 | `locations` | strong | Справочные данные, редко меняются |
 | `stories` | eventual | Автор видит историю сразу, зрители с задержкой |
 | `story_views` | eventual | Счётчик просмотров может отставать |
-| `post_likes` | eventual | Счётчик лайков может отставать. post_counters компенсирует для быстрого отображения |
-| `post_counters` | eventual | Счётчики должны быть близки к актуальным |
-| `user_counters` | eventual | Обновляется при подписках/отписках |
-| `feed_cache` | eventual | Полная перестройка фоновым процессом. Новые посты автора добавляются мгновенно |
-| `interactions_buffer` | None | Буфер только для записи|
-| `user_interactions_log` | eventual | Аналитика и ML-модели толерантны к задержкам |
+| `post_likes` | eventual | Счётчик лайков может отставать |
+| `interactions` | eventual | Аналитические/ML-данные |
 
 ## 5.5. Распределение нагрузки по ключам
 
 | Таблица | Ключ | Распределение |
 |---------|------|----------------------|
 | `users` | `id` | Равномерное |
-| `user_sessions` | `user_id` | Равномерное |
-| `user_graph` | `follower_id` | Смещённое. У популярных блогеров миллионы подписчиков |
+| `follow` | `follower_id` | Смещённое. У популярных блогеров миллионы подписчиков |
 | `media` | `id` | Смещенное |
+| `media_images` | `id` | Смещенное, аналогично media |
+| `media_video` | `id` | Смещенное, аналогично media |
 | `posts` | `author_id` | Смещённое к активным авторам |
 | `post_media` | `post_id` | Смещенное (коррелирует с `posts`) |
 | `locations` | `id` | Смещенное в сторону крупных городов |
 | `stories` | `author_id` | Смещённое к активным авторам |
 | `story_views` | `story_id` | Смещенное |
 | `post_likes` | `post_id` | Экстремально смещённое |
-| `post_counters` | `post_id` | Экстремальное смещенное (коррелирует с `post_likes`) |
-| `user_counters` | `user_id` | Равномерное |
-| `feed_cache` | `user_id` | Равномерное |
-| `interactions_buffer` | - | Только запись |
-| `user_interactions_log` | `user_id` | Равномерное |
+| `interactions` | `user_id` | Равномерное |
 
 # 6. Физическая схема БД
 
@@ -438,17 +426,20 @@ $$
 | :--- | :--- | :--- | :--- | :--- |
 | `users` | PostgreSQL | По id | 1 master + 2 replicas | Основная таблица, все остальные ссылаются на неё. Collocated с `user_sessions`, `user_counters` |
 | `user_sessions` | PostgreSQL | По user_id (collocated с `users`) | Аналогично `users`: 1 master + 2 replicas | Collocated с `users` |
-| `user_graph` | PostgreSQL | По `following_id` | 1 master + 2 replicas | Шард по following_id - запрос "кто подписан на пользователя X?" выполняется на одном шарде |
-| `user_counters` | Redis (hot) -> PostgreSQL (durable) | Redis: hash-slot по user_id; PG: по user_id (collocated с `users`) | Redis: 3 master + 3 replica (Redis); PG: 1 master + 2 replicas | Redis хранит горячие счётчики. Flusher каждые 10 сек пишет дельту в PG. При Redis miss - fallback на PG |
+| `follow` | PostgreSQL | По `following_id` | 1 master + 2 replicas | Шард по following_id - запрос "кто подписан на пользователя X?" выполняется на одном шарде |
+| `user_counters` | Redis | По user_id | 3 master + 3 replica | Хранит горячие счётчики |
 | `posts` | PostgreSQL | По author_id (collocated с `users`) | 1 master + 2 replicas | Collocated с `post_media`, `media`: по author_id - пост собирается на одном шарде. Soft delete через is_deleted |
 | `post_media` | PostgreSQL | По author_id из связанного `posts` (collocated) | Аналогично `posts` | Связующая таблица пост - медиа |
-| `media` | PostgreSQL (метаданные) + S3 (файлы) | По uploader_id | PG: 1 master + 2 replicas |  |
-| `post_likes` | PostgreSQL | По post_id | 1 master + 2 replicas | Запись через Kafka (не напрямую из API) |
-| `post_counters` | Redis (hot) -> PostgreSQL (durable) | Redis: hash-slot по post_id; PG: по post_id | Redis: 3 master + 3 replica; PG: 1 master + 2 replicas | Аналогично `user_counters` |
+| `media` | PostgreSQL | По uploader_id | 1 master + 2 replicas |  |
+| `media_images` | PostgreSQL | По uploader_id (collocated с media) | Аналогично `media` | Расширение media для изображений |
+| `media_video` | PostgreSQL | По uploader_id (collocated с media) | Аналогично `media` | Расширение media для видео |
+| `post_likes` | PostgreSQL | По post_id | 1 master + 2 replicas |  |
+| `post_counters` | Redis | По post_id | 3 master + 3 replica | Аналогично `user_counters` |
 | `locations` | PostgreSQL | Reference table - полная копия на каждом шарде | Копируется автоматически на все worker-nodes | Маленькая справочная таблица |
 | `stories` | PostgreSQL | По author_id (hash, collocated с `users`) | 1 master + 2 replicas | Партиционирование по created_at (monthly) для быстрого удаления старых данных |
 | `story_views` | PostgreSQL | По story_id | 1 master + 2 replicas |  |
-| `feed_cache` | Redis | Hash-slot по `user_id` | 3 master + 3 replica |  |
+| `story_counter` | Redis | По story_id | 3 master + 3 replica | Аналогично `user_counters` |
+| `feed_cache` | Redis | Hash-slot по `user_id` | 3 master + 3 replicas |  |
 | `interactions_buffer` | Kafka | Ключ партиционирования post_id | 3 брокера × replication factor 3 |  |
 | `user_interactions_log` | ClickHouse | Партиции по месяцам; шардирование на 8+ шардов | 3 реплики на каждый шард; ежедневный backup в S3 |  |
 
@@ -462,7 +453,6 @@ $$
     <th>Unique</th>
     <th>Описание</th>
   </tr>
-
   <tr>
     <td rowspan="7"><strong>users</strong></td>
     <td><code>pk_users</code></td>
@@ -506,10 +496,9 @@ $$
     <td></td>
     <td>используется в алгоритме поиска</td>
   </tr>
-
   <tr>
-    <td rowspan="5"><strong>user_sessions</strong></td>
-    <td><code>pk_user_sessions</code></td>
+    <td rowspan="5"><strong>users_sessions</strong></td>
+    <td><code>pk_users_sessions</code></td>
     <td>B-Tree (PK)</td>
     <td>Да</td>
     <td>Основной ключ</td>
@@ -538,53 +527,50 @@ $$
     <td></td>
     <td>(user_id, is_revoked) WHERE is_revoked = false - активные сессии</td>
   </tr>
-
   <tr>
-    <td rowspan="5"><strong>user_graph</strong></td>
-    <td><code>pk_user_graph</code></td>
+    <td rowspan="5"><strong>follow</strong></td>
+    <td><code>pk_follow</code></td>
     <td>B-Tree (PK)</td>
     <td>Да</td>
-    <td>Основной ключ</td>
+    <td>(follower_id, following_id) - составной PK</td>
   </tr>
   <tr>
-    <td><code>uq_graph_pair</code></td>
+    <td><code>uq_follow_pair</code></td>
     <td>B-Tree</td>
     <td>Да</td>
     <td>(follower_id, following_id) - нельзя подписаться дважды</td>
   </tr>
   <tr>
-    <td><code>idx_graph_following_status</code></td>
+    <td><code>idx_follow_following_status</code></td>
     <td>B-Tree</td>
     <td></td>
     <td>(following_id, status) - fanout: все подписчики X, локально на шарде</td>
   </tr>
   <tr>
-    <td><code>idx_graph_follower_status</code></td>
+    <td><code>idx_follow_follower_status</code></td>
     <td>B-Tree</td>
     <td></td>
-    <td>(follower_id, status) - на кого подписан A (scatter-gather)</td>
+    <td>(follower_id, status) - на кого подписан</td>
   </tr>
   <tr>
-    <td><code>idx_graph_following_created</code></td>
+    <td><code>idx_follow_following_created</code></td>
     <td>B-Tree (partial)</td>
     <td></td>
     <td>(following_id, created_at DESC) WHERE status='active' - новые подписчики</td>
   </tr>
-
   <tr>
     <td rowspan="2"><strong>user_counters</strong></td>
     <td><code>pk_user_counters</code></td>
     <td>B-Tree (PK)</td>
     <td>Да</td>
-    <td>user_id - 1:1 с users</td>
+    <td>user_id - 1:1 с users (PostgreSQL durable copy)</td>
   </tr>
   <tr>
     <td><code>cnt:u:{user_id}</code></td>
     <td>Redis Hash</td>
     <td></td>
-    <td>горячие счетчики</td>
+    <td>Горячие счётчики: posts_count, followers_count, following_count</td>
   </tr>
-
   <tr>
     <td rowspan="6"><strong>posts</strong></td>
     <td><code>pk_posts</code></td>
@@ -620,55 +606,78 @@ $$
     <td><code>idx_posts_updated_at</code></td>
     <td>B-Tree</td>
     <td></td>
-    <td>pdated_at - отслеживает изменения</td>
+    <td>updated_at - отслеживает изменения</td>
   </tr>
-
   <tr>
     <td rowspan="1"><strong>post_media</strong></td>
     <td><code>pk_post_media</code></td>
     <td>B-Tree (PK)</td>
     <td>Да</td>
-    <td>Основной ключ</td>
+    <td>(post_id, media_id) - составной PK</td>
   </tr>
-
-<tr>
+  <tr>
     <td rowspan="5"><strong>media</strong></td>
     <td><code>pk_media</code></td>
     <td>B-Tree (PK)</td>
     <td>Да</td>
     <td>id - основной поиск по ID</td>
-</tr>
-<tr>
+  </tr>
+  <tr>
     <td><code>idx_media_uploader_created</code></td>
     <td>B-Tree</td>
     <td></td>
     <td>uploader_id, created_at DESC - все медиа пользователя (галерея), collocated с users</td>
-</tr>
-<tr>
+  </tr>
+  <tr>
     <td><code>uq_media_sha256</code></td>
     <td>B-Tree (partial)</td>
     <td>Да</td>
     <td>WHERE sha256_hash IS NOT NULL - не загружать дубли файла</td>
-</tr>
-<tr>
+  </tr>
+  <tr>
     <td><code>uq_media_s3</code></td>
     <td>B-Tree</td>
     <td>Да</td>
     <td>s3_bucket, s3_key - уникальность S3-объекта</td>
-</tr>
-<tr>
+  </tr>
+  <tr>
     <td><code>idx_media_created</code></td>
     <td>B-Tree</td>
     <td></td>
     <td>created_at DESC - пагинация по дате, аналитика</td>
-</tr>
-
+  </tr>
+  <tr>
+    <td rowspan="2"><strong>media_images</strong></td>
+    <td><code>pk_media_images</code></td>
+    <td>B-Tree (PK, FK)</td>
+    <td>Да</td>
+    <td>id -> media.id, 1:1</td>
+  </tr>
+  <tr>
+    <td><code>chk_media_images_type</code></td>
+    <td>CHECK constraint</td>
+    <td></td>
+    <td>media_type = 'image' - типобезопасный FK</td>
+  </tr>
+  <tr>
+    <td rowspan="2"><strong>media_video</strong></td>
+    <td><code>pk_media_video</code></td>
+    <td>B-Tree (PK, FK)</td>
+    <td>Да</td>
+    <td>id -> media.id, 1:1</td>
+  </tr>
+  <tr>
+    <td><code>chk_media_video_type</code></td>
+    <td>CHECK constraint</td>
+    <td></td>
+    <td>media_type = 'video' - типобезопасный FK</td>
+  </tr>
   <tr>
     <td rowspan="4"><strong>post_likes</strong></td>
     <td><code>pk_post_likes</code></td>
     <td>B-Tree (PK)</td>
     <td>Да</td>
-    <td>Основной ключ</td>
+    <td>(post_id, user_id) - составной PK</td>
   </tr>
   <tr>
     <td><code>uq_plikes_pair</code></td>
@@ -680,7 +689,7 @@ $$
     <td><code>idx_plikes_post</code></td>
     <td>B-Tree</td>
     <td></td>
-    <td>post_id - кто лайкнул пост </td>
+    <td>post_id - кто лайкнул пост</td>
   </tr>
   <tr>
     <td><code>idx_plikes_user</code></td>
@@ -688,21 +697,19 @@ $$
     <td></td>
     <td>user_id - все лайки юзера (scatter-gather)</td>
   </tr>
-
   <tr>
     <td rowspan="2"><strong>post_counters</strong></td>
     <td><code>pk_post_counters</code></td>
     <td>B-Tree (PK)</td>
     <td>Да</td>
-    <td>post_id</td>
+    <td>post_id (PostgreSQL durable copy)</td>
   </tr>
   <tr>
-    <td>cnt:p:{post_id}</td>
+    <td><code>cnt:p:{post_id}</code></td>
     <td>Redis Hash</td>
     <td></td>
-    <td>горячие счётчики</td>
+    <td>Горячие счётчики: likes_count, views_count</td>
   </tr>
-
   <tr>
     <td rowspan="3"><strong>locations</strong></td>
     <td><code>pk_locations</code></td>
@@ -722,7 +729,6 @@ $$
     <td></td>
     <td>гео-поиск "рядом со мной"</td>
   </tr>
-
   <tr>
     <td rowspan="4"><strong>stories</strong></td>
     <td><code>pk_stories</code></td>
@@ -748,45 +754,94 @@ $$
     <td></td>
     <td>какая story использует медиа</td>
   </tr>
-
   <tr>
-    <td rowspan="4"><strong>story_views</strong></td>
+    <td rowspan="5"><strong>story_views</strong></td>
     <td><code>pk_story_views</code></td>
     <td>B-Tree (PK)</td>
     <td>Да</td>
-    <td>Основной ключ</td>
+    <td>(story_id, viewer_id, viewed_at) - viewed_at обязателен в PK для declarative partitioning</td>
   </tr>
   <tr>
-    <td><code>uq_sviews_pair</code></td>
+    <td><code>uq_sviews_story_viewer</code></td>
     <td>B-Tree</td>
     <td>Да</td>
-    <td>(story_id, viewer_id) - один просмотр на юзера</td>
+    <td>(story_id, viewer_id) - дедупликация: один просмотр на юзера на story</td>
   </tr>
   <tr>
-    <td><code>idx_sviews_story_viewed</code></td>
+    <td><code>idx_sviews_story_viewed_at</code></td>
     <td>B-Tree</td>
     <td></td>
-    <td>story_id - кто смотрел story</td>
+    <td>(story_id, viewed_at DESC) - список зрителей по времени (UI автора: «кто смотрел недавно»)</td>
   </tr>
   <tr>
     <td><code>idx_sviews_viewer</code></td>
     <td>B-Tree</td>
     <td></td>
-    <td>viewer_id - какие stories смотрел пользователь</td>
+    <td>(viewer_id, story_id) - "какие stories смотрел user"</td>
   </tr>
-
+  <tr>
+    <td><code>PARTITION BY RANGE (viewed_at)</code></td>
+    <td>Declarative Partitioning</td>
+    <td></td>
+    <td>Ежедневные партиции (pg_partman). DROP PARTITION вместо DELETE - мгновенное удаление без VACUUM</td>
+  </tr>
+  <tr>
+    <td rowspan="3"><strong>stories_counters</strong></td>
+    <td><code>story:{story_id}:counters</code></td>
+    <td>Redis Hash</td>
+    <td></td>
+    <td>views_count</td>
+  </tr>
+  <tr>
+    <td><code>story:{story_id}:viewers</code></td>
+    <td>Redis Set</td>
+    <td></td>
+    <td>SET viewer_id-ов для дедупликации</td>
+  </tr>
+  <tr>
+    <td><code>Lua-скрипт</code></td>
+    <td>Redis Script</td>
+    <td></td>
+    <td>Атомарная проверка SISMEMBER + HINCRBY</td>
+  </tr>
   <tr>
     <td rowspan="2"><strong>feed_cache</strong></td>
     <td><code>feed:{user_id}</code></td>
     <td>Redis Sorted Set</td>
     <td></td>
-    <td>лента пользователя</td>
+    <td>Лента пользователя</td>
   </tr>
   <tr>
     <td><code>like:{user_id}:{post_id}</code></td>
-    <td>Redis String (SET NX)</td>
+    <td>Redis String</td>
     <td></td>
     <td>1 лайк от одного пользователя для одного поста</td>
+  </tr>
+  <tr>
+    <td rowspan="1"><strong>interactions_buffer</strong></td>
+    <td><code>topic: interactions</code></td>
+    <td>Kafka Topic</td>
+    <td></td>
+    <td>Ключ партиционирования: post_id. RF=3</td>
+  </tr>
+  <tr>
+    <td rowspan="3"><strong>user_interactions_log</strong></td>
+    <td><code>PRIMARY KEY (user_id, created_at)</code></td>
+    <td>ClickHouse MergeTree</td>
+    <td></td>
+    <td>Сортировка по user_id + дата для аналитики</td>
+  </tr>
+  <tr>
+    <td><code>PARTITION BY toYYYYMM(created_at)</code></td>
+    <td>ClickHouse Partition</td>
+    <td></td>
+    <td>Партиции по месяцам - быстрый DROP старых данных</td>
+  </tr>
+  <tr>
+    <td><code>idx_interactions_post</code></td>
+    <td>ClickHouse Skipping Index</td>
+    <td></td>
+    <td>post_id - аналитика по конкретному посту</td>
   </tr>
 </table>
 
