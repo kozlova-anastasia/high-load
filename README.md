@@ -1091,7 +1091,7 @@ $$
 
 ## 11.3. Поды и контейнеры (k8s)
 
-| Pod / Сервис | Requests (CPU / RAM) | Limits (CPU / RAM) | Реплики (min) | Примечания |
+| Pod / Сервис | Requests (CPU / RAM) | Limits (CPU / RAM) | Реплики | Примечания |
 | :--- | :--- | :--- | :--- | :--- |
 | api-service (Go) | 500m / 512 MiB | 1000m / 1 GiB | 32 | Stateless. HPA по CPU и RPS (цель: 208 645 пиковый RPS). Встроенная JWT-аутентификация |
 | upload-service (Go) | 500m / 1 GiB | 1000m / 2 GiB | 6 | Presigned URL. Высокий сетевой throughput |
