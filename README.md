@@ -1066,41 +1066,62 @@ $$
 
 # 11. Список серверов
 
-## 11.1. Физические/VM/managed-инстансы и node‑pools
+## 11.1. Требования к ресурсам
 
-| Сервер / Node pool | Роль / Сервисы | Конфигурация (vCPU / RAM / Disk) | Количество | Примечания |
-| :--- | :--- | :--- | :--- | :--- |
-| Managed L4 Load Balancer (cloud) | Внешняя сеть, балансировка TCP | Managed by provider | 1 logical | Cloud-managed |
-| WAF / DDoS (cloud-managed) | Защита периметра | Managed by provider | 1 logical | У провайдера/Cloud WAF |
-| k8s Cluster | Все сервисы: ingress, API, upload, workers, media-processing | Разные node pools | 3 control-plane + worker nodes | Control plane управляется Яндексом |
-| PostgreSQL (Citus) | Реляционная СУБД (users, posts, media, follow, stories, post_likes и др.) | 16 vCPU / 64 GiB / 2 TB NVMe | 8 шардов × 3 узла = 24 | 1 master + 2 replicas на шард. WAL-архивация в S3. Суммарно ~16 TB данных на шард |
-| Redis Cluster | Кэш и горячие счётчики | 8 vCPU / 32 GiB / 500 GiB SSD | 6 (3 masters + 3 replicas) | AOF + RDB снапшоты |
-| Kafka Brokers | Потоковая шина данных (буфер событий interactions) | 16 vCPU / 64 GiB / 4 TB NVMe SSD | 5 брокеров | replication.factor = 3, Min ISR = 2, retention 7 дней |
-| ClickHouse Nodes | Аналитика (OLAP): user_interactions_log | 16 vCPU / 128 GiB / 8 TB NVMe | 12 (4 шарда × 3 реплики) | 178 TB данных. Партиции по месяцам. ReplicatedMergeTree. Replay из Kafka при потере |
-| Object Storage (S3 managed) | Хранилище медиа: фото, видео, stories | Managed S3 (Standard Tier + Icebox для архива) | 350.64 Пб | Версионирование, lifecycle |
-| CDN (edge, Yandex Cloud CDN) | Отдача статики: фото, видео, stories | Managed CDN | 30+ точек присутствия в РФ | 181 Гбит/с пиковый трафик. Invalidation/purge по API. Serve-stale при промахе |
+| Сервис | Нагрузка | CPU | RAM | Диск | Сеть | Пояснение |
+| --- | --- | --- | --- | --- | --- | --- |
+| **API (Go backend)** | 208 645 RPS (пик) | 2 086 vCPU | 2 ТБ | 2 ТБ | 10 Гбит/с | **RPS:** из расчёта (208 645). <br>**CPU:** 100 RPS / vCPU -> 208 645 / 100 = 2 086. <br>**RAM:** 1 ГБ на 1 000 RPS → 208 ГБ + запас ×10 → ~2 ТБ. <br>**Сеть:** 208k × 10 КБ ≈ 2.08 ГБ/с ≈ 16.6 Гбит/с -> сжатие ≈ 10 Гбит/с |
+| **Upload service** | 1 146 RPS | 58 vCPU | 128 ГБ | 1 ТБ | 25.49 Гбит/с | **CPU:** 20 RPS / vCPU -> 1 146 / 20 ≈ 58. <br>**Сеть:** напрямую из расчёта upload-трафика (раздел 2.2) |
+| **NGINX (L7)** | 208 645 RPS + CDN miss | 1 440 vCPU | 512 ГБ | 500 ГБ | 216.69 Гбит/с | **CPU:** 90 инстансов × 16 vCPU = 1 440. <br>**Сеть:** 181 + 25.49 + 10.2 = 216.69 Гбит/с |
+| **CDN origin (ObjectStore)** | 13.10 ПБ/день | 500 vCPU | 1 ТБ | 350.64 ПБ | 3 641 Гбит/с | **Сеть:** пиковая из расчёта (3 641 Гбит/с). <br>**Диск:** из таблицы хранения (350.64 ПБ) |
+| **PostgreSQL (Citus)** | 100 000 QPS | 1 429 vCPU | 4 ТБ | 500 ТБ | 40 Гбит/с | **CPU:** 70 QPS / vCPU -> 100 000 / 70 = 1 429. <br>**RAM:** 64 ГБ × ~60 шардов ≈ 3.8 ТБ -> округлено до 4 ТБ |
+| **Redis Cluster** | 100 000 ops/sec | 300 vCPU | 1 ТБ | 10 ТБ | 20 Гбит/с | **CPU:** 300k ops/sec / 1k ops per core -> 300 vCPU. <br>**RAM:** кэш (feed + counters) |
+| **Kafka** | 70 000 events/sec | 200 vCPU | 512 ГБ | 200 ТБ | 30 Гбит/с | **Сеть:** replication factor = 3 -> входящий поток ×3 |
+| **ClickHouse** | аналитика | 400 vCPU | 1 ТБ | 300 ТБ | 20 Гбит/с | **Данные:** interactions (178 ТБ + рост + репликация) |
+| **Workers (media)** | обработка видео | 800 vCPU | 1 ТБ | 100 ТБ | 50 Гбит/с | **CPU:** транскодинг видео (самая тяжёлая операция). <br>**Сеть:** чтение + запись в Object Storage |
+| **Monitoring/Logs** | метрики/логи | 100 vCPU | 256 ГБ | 100 ТБ | 10 Гбит/с | **Сеть:** ingestion логов и метрик со всех сервисов |
 
-## 11.2. Stateful-кластер
+## 11.2. Серверы
 
-| Компонент | Тип диска | Роли в кластере | Количество | Примечания |
-| :--- | :--- | :--- | :--- | :--- |
-| PostgreSQL (Citus) | 2 TB NVMe | 1 master + 2 hot replicas на шард | 8 шардов × 3 = 24 узла | WAL-архивация в S3 каждые 5 минут |
-| Redis Cluster | 500 GiB SSD | 3 masters + 3 replicas (шардирование слотов) | 6 узлов | RDB снапшоты каждые 6 часов в S3 + AOF лог. Критичные счётчики восстанавливаются из PostgreSQL |
-| Kafka | 4 TB NVMe SSD | 5 брокеров | 5 узлов | replication.factor = 3, Min ISR = 2 |
-| ClickHouse | 8 TB NVMe | 4 шарда × 3 реплики (ReplicatedMergeTree) | 12 узлов | Полный бэкап еженедельно + инкрементальный ежедневно в S3. Дополнительно: гарантированное восстановление через replay из Kafka |
+| Сервис                      | Тип сервера   | Конфигурация           | Кол-во серверов | Стоимость сервера (мес) | Итоговая стоимость (мес) |
+| --------------------------- | ------------- | ---------------------- | --------------- | ----------------------- | ------------------------ |
+| **API**                     | Compute       | 32 vCPU / 128 GB       | 70              | 120 000 ₽               | 8 400 000 ₽              |
+| **Upload**                  | High-network  | 16 vCPU / 64 GB        | 6               | 90 000 ₽                | 540 000 ₽                |
+| **NGINX (L7)**              | High-network  | 16 vCPU / 64 GB        | 90              | 90 000 ₽                | 8 100 000 ₽              |
+| **PostgreSQL (Citus)**      | Storage-heavy | 32 vCPU / 256 GB       | 60              | 180 000 ₽               | 10 800 000 ₽             |
+| **Redis Cluster**           | RAM-heavy     | 32 vCPU / 256 GB       | 12              | 180 000 ₽               | 2 160 000 ₽              |
+| **Kafka**                   | Storage-heavy | 32 vCPU / 128 GB       | 20              | 160 000 ₽               | 3 200 000 ₽              |
+| **ClickHouse**              | Storage-heavy | 32 vCPU / 256 GB       | 25              | 180 000 ₽               | 4 500 000 ₽              |
+| **Workers (media)**         | Compute       | 32 vCPU / 128 GB       | 40              | 140 000 ₽               | 5 600 000 ₽              |
+| **Object Storage (RustFS)** | Storage-heavy | 32 vCPU / 256 GB + HDD | 200             | 180 000 ₽               | 36 000 000 ₽             |
 
-## 11.3. Поды и контейнеры (k8s)
+## 11.3. Kubernetes
 
-| Pod / Сервис | Requests (CPU / RAM) | Limits (CPU / RAM) | Реплики | Примечания |
-| :--- | :--- | :--- | :--- | :--- |
-| api-service (Go) | 500m / 512 MiB | 1000m / 1 GiB | 32 | Stateless. HPA по CPU и RPS (цель: 208 645 пиковый RPS). Встроенная JWT-аутентификация |
-| upload-service (Go) | 500m / 1 GiB | 1000m / 2 GiB | 6 | Presigned URL. Высокий сетевой throughput |
-| nginx-ingress-controller | 250m / 256 MiB | 500m / 512 MiB | 6 | TLS termination, rate limiting. 6 подов на 6 нодах ingress pool |
-| media-transcoder | 4000m / 8 GiB | 8000m / 16 GiB | 8 | Запуск на media-cpu и media-gpu node pools |
-| scheduler / cronjobs | 200m / 256 MiB | 500m / 512 MiB | 2 | Удаление просроченных stories, очистка кэша, инвалидация CDN |
-| prometheus | 2000m / 8 GiB | 4000m / 16 GiB | 3 | PersistentVolume для TSDB |
-| grafana | 250m / 512 MiB | 500m / 1 GiB | 2 | HA за Internal LB |
-| ci-runner (docker executor) | 1000m / 2 GiB | 4000m / 8 GiB | autoscale | Исполняет CI job'ы GitLab. Запуск на ci-runners node pool |
+| Сервис                      | Поды | CPU req/lim | RAM req/lim   | CPU всего (req) | RAM всего (req) | Стоимость (мес) |
+| --------------------------- | ---- | ----------- | ------------- | --------------- | --------------- | --------------- |
+| **API**                     | 2000 | 0.5 / 1     | 0.5 / 1 ГБ    | 1000 vCPU       | 1000 ГБ         | 4 687 000 ₽     |
+| **Upload**                  | 50   | 0.5 / 1     | 0.5 / 1 ГБ    | 25 vCPU         | 25 ГБ           | 117 000 ₽       |
+| **NGINX ingress**           | 150  | 1 / 2       | 1 / 2 ГБ      | 150 vCPU        | 150 ГБ          | 703 000 ₽       |
+| **Workers (media)**         | 500  | 1 / 4       | 2 / 8 ГБ      | 500 vCPU        | 1000 ГБ         | 3 437 000 ₽     |
+| **Scheduler**               | 20   | 0.2 / 0.5   | 0.25 / 0.5 ГБ | 4 vCPU          | 5 ГБ            | 19 000 ₽        |
+| **Kafka**                   | 20   | 2 / 4       | 4 / 8 ГБ      | 40 vCPU         | 80 ГБ           | 225 000 ₽       |
+| **ClickHouse**              | 25   | 4 / 8       | 8 / 32 ГБ     | 100 vCPU        | 200 ГБ          | 562 000 ₽       |
+| **Redis**                   | 12   | 2 / 4       | 16 / 32 ГБ    | 24 vCPU         | 192 ГБ          | 270 000 ₽       |
+| **Postgres (Citus)**        | 60   | 4 / 8       | 16 / 64 ГБ    | 240 vCPU        | 960 ГБ          | 1 740 000 ₽     |
+
+## Примечания по стоимости
+
+| Компонент                       | Источник оценки        | Описание                                                                                                                         |
+| ------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Серверы (CPU/RAM)               | Selectel, Yandex Cloud | Использованы публичные тарифы на облачные VM (vCPU + RAM). Средняя стоимость: 1 vCPU ≈ 800–1 200 ₽/мес, 1 ГБ RAM ≈ 150-300 ₽/мес |
+| Дисковое хранилище (SSD/HDD)    | VK Cloud               | SSD: 6-10 ₽/ГБ/мес; HDD/объектное хранилище: 1.5-3 ₽/ГБ/мес                                                                      |
+| Object Storage (S3-совместимое) | Selectel, Yandex Cloud | Стоимость рассчитана по модели хранения больших объемов (PB-scale) с учетом снижения цены при росте объема                       |
+| Сетевой трафик                  | Yandex Cloud           | Исходящий трафик: 1-2 ₽/ГБ. Внутренний трафик между сервисами часто бесплатный                                                   |
+| Kubernetes (управляемый)        | Yandex Cloud, VK Cloud | Плата за control-plane + стоимость worker-нод (те же VM тарифы)                                                                  |
+| CDN                             | VK Cloud, Selectel     | Стоимость зависит от трафика: в среднем 0.5-1.5 ₽/ГБ при больших объемах                                                         |
+| Kafka / ClickHouse / Redis      | Самостоятельный расчет | Стоимость получена из требуемых ресурсов (CPU, RAM, диск) * средняя цена VM                                                      |
+| Запас по ресурсам               | Внутреннее допущение   | В расчетах заложен запас 30-50% для пиковых нагрузок и отказоустойчивости                                                        |
+
 
 ## Источники
 
