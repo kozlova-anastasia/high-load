@@ -1062,32 +1062,45 @@ $$
 
 # 10. Схема проекта
 
-## 10.1. Схема
-
 ![alt text](итог.drawio.png)
 
-## 10.2. Пояснение к схеме
+# 11. Список серверов
 
-### Потоки данных
-**Read flow (статический контент / медиа)**
+## 11.1. Физические/VM/managed-инстансы и node‑pools
 
-Клиент запрашивает URL медиа -> DNS указывает на CDN edge -> CDN отдает из кэша (cache hit)
+| Сервер / Node pool | Роль / Сервисы | Конфигурация (vCPU / RAM / Disk) | Количество | Примечания |
+| :--- | :--- | :--- | :--- | :--- |
+| Managed L4 Load Balancer (cloud) | Внешняя сеть, балансировка TCP | Managed by provider | 1 logical | Cloud-managed |
+| WAF / DDoS (cloud-managed) | Защита периметра | Managed by provider | 1 logical | У провайдера/Cloud WAF |
+| k8s Cluster | Все сервисы: ingress, API, upload, workers, media-processing | Разные node pools | 3 control-plane + worker nodes | Control plane управляется Яндексом |
+| PostgreSQL (Citus) | Реляционная СУБД (users, posts, media, follow, stories, post_likes и др.) | 16 vCPU / 64 GiB / 2 TB NVMe | 8 шардов × 3 узла = 24 | 1 master + 2 replicas на шард. WAL-архивация в S3. Суммарно ~16 TB данных на шард |
+| Redis Cluster | Кэш и горячие счётчики | 8 vCPU / 32 GiB / 500 GiB SSD | 6 (3 masters + 3 replicas) | AOF + RDB снапшоты |
+| Kafka Brokers | Потоковая шина данных (буфер событий interactions) | 16 vCPU / 64 GiB / 4 TB NVMe SSD | 5 брокеров | replication.factor = 3, Min ISR = 2, retention 7 дней |
+| ClickHouse Nodes | Аналитика (OLAP): user_interactions_log | 16 vCPU / 128 GiB / 8 TB NVMe | 12 (4 шарда × 3 реплики) | 178 TB данных. Партиции по месяцам. ReplicatedMergeTree. Replay из Kafka при потере |
+| Object Storage (S3 managed) | Хранилище медиа: фото, видео, stories | Managed S3 (Standard Tier + Icebox для архива) | 350.64 Пб | Версионирование, lifecycle |
+| CDN (edge, Yandex Cloud CDN) | Отдача статики: фото, видео, stories | Managed CDN | 30+ точек присутствия в РФ | 181 Гбит/с пиковый трафик. Invalidation/purge по API. Serve-stale при промахе |
 
-При cache miss CDN обращается к origin (ObjectStore / cdn origin) -> ObjectStore отвечает -> CDN кеширует и возвращает
+## 11.2. Stateful-кластер
 
-Для приватного медиа CDN может проверять подпись/проксировать запрос к L7 для authorization
+| Компонент | Тип диска | Роли в кластере | Количество | Примечания |
+| :--- | :--- | :--- | :--- | :--- |
+| PostgreSQL (Citus) | 2 TB NVMe | 1 master + 2 hot replicas на шард | 8 шардов × 3 = 24 узла | WAL-архивация в S3 каждые 5 минут |
+| Redis Cluster | 500 GiB SSD | 3 masters + 3 replicas (шардирование слотов) | 6 узлов | RDB снапшоты каждые 6 часов в S3 + AOF лог. Критичные счётчики восстанавливаются из PostgreSQL |
+| Kafka | 4 TB NVMe SSD | 5 брокеров | 5 узлов | replication.factor = 3, Min ISR = 2 |
+| ClickHouse | 8 TB NVMe | 4 шарда × 3 реплики (ReplicatedMergeTree) | 12 узлов | Полный бэкап еженедельно + инкрементальный ежедневно в S3. Дополнительно: гарантированное восстановление через replay из Kafka |
 
-**Read flow (API)**
+## 11.3. Поды и контейнеры (k8s)
 
-Клиент -> DNS -> L4 -> WAF -> L7 -> internal LB -> API
-
-API: сначала обращается к Redis (кэш) - если cache miss, обращается к Postgres. API отдаёт ответ, при необходимости обновляет cache
-
-**Write / Upload flow**
-
-Клиент запрашивает presign у Upload service (через API). Upload service возвращает presigned URL, клиент загружает файл напрямую в ObjectStore. ObjectStore генерирует событие (PUT notification) в Kafka
-Background worker поднимает задачу трансформации (транскодинг/thumbnail)
-
+| Pod / Сервис | Requests (CPU / RAM) | Limits (CPU / RAM) | Реплики (min) | Примечания |
+| :--- | :--- | :--- | :--- | :--- |
+| api-service (Go) | 500m / 512 MiB | 1000m / 1 GiB | 32 | Stateless. HPA по CPU и RPS (цель: 208 645 пиковый RPS). Встроенная JWT-аутентификация |
+| upload-service (Go) | 500m / 1 GiB | 1000m / 2 GiB | 6 | Presigned URL. Высокий сетевой throughput |
+| nginx-ingress-controller | 250m / 256 MiB | 500m / 512 MiB | 6 | TLS termination, rate limiting. 6 подов на 6 нодах ingress pool |
+| media-transcoder | 4000m / 8 GiB | 8000m / 16 GiB | 8 | Запуск на media-cpu и media-gpu node pools |
+| scheduler / cronjobs | 200m / 256 MiB | 500m / 512 MiB | 2 | Удаление просроченных stories, очистка кэша, инвалидация CDN |
+| prometheus | 2000m / 8 GiB | 4000m / 16 GiB | 3 | PersistentVolume для TSDB |
+| grafana | 250m / 512 MiB | 500m / 1 GiB | 2 | HA за Internal LB |
+| ci-runner (docker executor) | 1000m / 2 GiB | 4000m / 8 GiB | autoscale | Исполняет CI job'ы GitLab. Запуск на ci-runners node pool |
 
 ## Источники
 
