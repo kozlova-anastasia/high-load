@@ -1060,6 +1060,35 @@ $$
 | Frontend (React/TS) + статические ассеты | SPA не загружается, UI недоступен | Кешированные билды в CDN, Service Worker для offline; минимальный HTML fallback; rollback на предыдущий билд через CI/CD |
 | Мобильные клиенты (iOS/Android) | Старые клиенты получают ошибки/неправильную логику | Версионирование API; backward‑compatible изменения; feature flags; временное включение совместимого поведения на бэкенде |
 
+# 10. Схема проекта
+
+## 10.1. Схема
+
+![alt text](итог.drawio.png)
+
+## 10.2. Пояснение к схеме
+
+### Потоки данных
+**Read flow (статический контент / медиа)**
+
+Клиент запрашивает URL медиа -> DNS указывает на CDN edge -> CDN отдает из кэша (cache hit)
+
+При cache miss CDN обращается к origin (ObjectStore / cdn origin) -> ObjectStore отвечает -> CDN кеширует и возвращает
+
+Для приватного медиа CDN может проверять подпись/проксировать запрос к L7 для authorization
+
+**Read flow (API)**
+
+Клиент -> DNS -> L4 -> WAF -> L7 -> internal LB -> API
+
+API: сначала обращается к Redis (кэш) - если cache miss, обращается к Postgres. API отдаёт ответ, при необходимости обновляет cache
+
+**Write / Upload flow**
+
+Клиент запрашивает presign у Upload service (через API). Upload service возвращает presigned URL, клиент загружает файл напрямую в ObjectStore. ObjectStore генерирует событие (PUT notification) в Kafka
+Background worker поднимает задачу трансформации (транскодинг/thumbnail)
+
+
 ## Источники
 
 1. https://datareportal.com/reports/digital-2022-instagram-headlines?rq=instagram
