@@ -1010,42 +1010,22 @@ $$
 | Kotlin | Android-разработка | Более производительный и лучше походит для работы с камерой и системными настройками, чем кросс-платформенные варианты |
 | Swift | Ios-разработка | Более производительный и лучше походит для работы с камерой и системными настройками, чем кросс-платформенные варианты |
 | Nginx Ingress | Reverse-proxy и L7 балансировщик | Высокопроизводительный веб-сервер |
+| CDN | Отдача статики | Снижение нагрузки, ускорение раздачи контента |
 
 # 9. Обеспечение надежности
 
-## 9.1. Резервирование
-
-| Компонент | Роль | Репликация | Стратегия резервирования |
-| :--- | :--- | :--- | :--- |
-| L4-балансировщики | Приём входящего трафика, LB на уровне сети | Управляемый провайдер (HA, мультизональность) | Управляется провайдером; конфиги в Git |
-| L7-балансировщики (NGINX, ingress) | TLS termination, HTTP routing | Много экземпляров (api:64, upload:4, cdn:22) + healthchecks | Конфиги в Git; регулярные бэкапы конфигураций; снапшоты инстансов |
-| Object storage (RustFS) | Хранение медиа (фото, видео, stories) | Multi-AZ реплицирование; версионирование объектов | Версионирование, lifecycle; артефакты в S3; регулярная проверка целостности |
-| PostgreSQL (Citus, шарды) | Реляционная СУБД (users, posts, media, follow, stories и т.д.) | Шардирование; на каждом шарде: 1 master + 2 replicas | Full backup еженедельно + инкрементальный ежедневно в S3 |
-| Redis Cluster (user_counters, post_counters, feed_cache и т.д.) | Горячие счётчики и кэш | Redis Cluster: 3 master + 3 replica (шардирование слотов) | RDB снапшоты каждые 6 часов в S3 + AOF лог; репликация в кластере |
-| ClickHouse (user_interactions_log) | Аналитика / OLAP | Шардирование + 3 реплики на шард | Full backup еженедельно + инкрементальный ежедневно в S3 |
-| Kafka (interactions buffer) | Потоковая шина данных | 3 брокера | Встроенная репликация |
-| CDN (edge cache) | Доставка статики/медиа | Множество edge-нод; кэширование на краю | Конфигурации в Git; CDN invalidation; логи в централизованное хранилище |
-| Upload service (upload.social.com) | Приём загружаемых файлов, presign | Много инстансов, стейтлес, автоскейл | Файлы пишутся сразу в S3/RustFS (версионирование); метаданные в Postgres |
-| Application backend (Go-сервисы) | Бизнес-логика, API | Стейтлес, множественные инстансы, автоскейл | Образы в registry; CI/CD артефакты; конфиги в Git |
-| Frontend (React/TS) + статические ассеты | UI, SPA | Хостинг на CDN/статическом хранилище | Билды и релизы в артефактном хранилище; CDN invalidation |
-| Мобильные клиенты (iOS/Android) | Клиентские приложения | Распространение через App Store / Play Market | Исходники и билды в CI/CD; хранилище артефактов |
-
-## 9.2. Отказоустойчивость
-
-| Компонент | Отказ компонентов | Как компенсируется |
-| :--- | :--- | :--- |
-| L4-балансировщики | Входящий трафик не распределяется / частичная потеря доступа | Использовать managed LB с Multi‑AZ; провайдерский HA/Failover; healthchecks; при провале - DNS‑фейловер на запасной LB/статический хост |
-| L7-балансировщики (NGINX, ingress) | Прерывается TLS-терминация и HTTP-маршрутизация | Множественные NGINX-инстансы за L4; автоскейл, конфиги в Git; быстрый redeploy; healthchecks и переключение на резервные инстансы; serve‑stale кэши |
-| Object storage (RustFS) | Недоступны/утрачены медиа (фото/видео) - битые превью | Версионирование объектов, multi‑AZ репликация; периодический бэкап/архив в отдельный бакет; CDN serve‑stale; восстановление из бэкапа; reconciliation с метаданными |
-| PostgreSQL (Citus, шарды) | Записи на шарде недоступны для записи; возможна потеря данных | Реплики для чтения; автоматический/полуавтоматический failover (Promote replica, Patroni); WAL‑архивация + бэкапы; очередь записей в приложении на время восстановления |
-| Redis Cluster (user_counters, post_counters, feed_cache и т.д.) | Потеря горячих счётчиков/кэша; кратковременные ошибки | Авто‑failover на реплику; AOF + RDB для восстановления; восстановление критичных счётчиков из Postgres (durable copy); деградация функционала с использованием деградированных read-only/queue |
-| ClickHouse (user_interactions_log) | Потеря части аналитики / деградация запросов | Использование реплик, replay из Kafka; восстановление из бэкапов в S3; временное ограничение тяжёлых аналитических запросов |
-| Kafka (interactions buffer) | Партиции без quorum - запись/чтение блокируется | ISR+replication.factor>=3; при падении брокера — переизбыток реплик; MirrorMaker/backup‑sink в S3 для реплея; temporary pause producers, retry/backoff |
-| CDN (edge cache) | Рост latency / невозможность доставить контент с краёв | Fallback на origin; настройка serve‑stale и low‑res копий; invalidation и failover конфигураций; масштабирование origin |
-| Upload service (upload.social.com) | Нельзя загружать файлы (presign/payload) | Presigned uploads напрямую в S3 (обход сервиса); client retry + exponential backoff; временное хранение на edge/temporary store; повторная загрузка пользователем |
-| Application backend (Go-сервисы) | API возвращает ошибки, часть функций недоступна | Стейтлес-инстансы, автоскейл, blue/green и quick redeploy; circuit breakers & degraded mode (read‑only или ограниченный фичерсет); routing на здоровые zone |
-| Frontend (React/TS) + статические ассеты | SPA не загружается, UI недоступен | Кешированные билды в CDN, Service Worker для offline; минимальный HTML fallback; rollback на предыдущий билд через CI/CD |
-| Мобильные клиенты (iOS/Android) | Старые клиенты получают ошибки/неправильную логику | Версионирование API; backward‑compatible изменения; feature flags; временное включение совместимого поведения на бэкенде |
+| Компонент | Резервирование | Работа при отказе |
+| :--- | :--- | :--- | 
+| L4-балансировщики | На стороне провайдера | Падение одного снижает пропускную способность, трафик доступен через оставшиеся узлы |
+| L7-балансировщики/ api | N + 1 резервирование, 64 ноды | При падении 1 ноды, оставшиеся покарывают всю нагрузку |
+| L7-балансировщики/ upload | N + 1 резервирование, 4 ноды | При падении 1 ноды, оставшиеся покарывают всю нагрузку |
+| Kubernetes pods | 3 реплиики на сервис | Упавшие поды исключаются из балансировки |
+| RustFS | Erasure Coding (10 data shards + 4 parity shards) [[22]](https://docs.rustfs.com/concepts/principle/erasure-coding.html) | При отказе одного диска/ноды файл по-прежнему доступен |
+| PostgreSQL | 1 master + 2 replicas | При отказе master переход на replica |
+| Redis | 3 master + 3 replicas | При отказе master переход на replica |
+| ClickHouse | 8 шардов по 3 реплики | При отказе одной реплики - переход на другую, при отказе всех реплик - недоступность части данных |
+| Kafka | replication factor 3 | При полном отказе перестают записываться логи пользователей |
+| CDN | На стороне провайдера | При недоступности - раздача напрямую из S3 |
 
 # 10. Схема проекта
 
@@ -1120,3 +1100,4 @@ $$
 19. https://stats.napoleoncat.com/social-media-users-in-russian_federation/2021/
 20. https://wciom.com/press-release/russian-users-of-social-media-and-messengers-changes-amidst-the-special-operation
 21. https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/45530.pdf
+22. https://docs.rustfs.com/concepts/principle/erasure-coding.html
