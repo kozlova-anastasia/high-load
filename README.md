@@ -438,8 +438,7 @@ $$
 | `story_views` | PostgreSQL | По story_id | 1 master + 2 replicas |  |
 | `story_counter` | Redis | По story_id | 3 master + 3 replica | Аналогично `user_counters` |
 | `feed_cache` | Redis | Hash-slot по `user_id` | 3 master + 3 replicas |  |
-| `interactions_buffer` | Kafka | Ключ партиционирования post_id | 3 брокера × replication factor 3 |  |
-| `user_interactions_log` | ClickHouse | Партиции по месяцам; шардирование на 8+ шардов | 3 реплики на каждый шард; ежедневный backup в S3 |  |
+| `user_interactions` | Kafka | Ключ партиционирования post_id | 3 брокера × replication factor 3 |  |
 
 ## 6.2. Индексы
 
@@ -816,30 +815,11 @@ $$
     <td>1 лайк от одного пользователя для одного поста</td>
   </tr>
   <tr>
-    <td rowspan="1"><strong>interactions_buffer</strong></td>
+    <td rowspan="1"><strong>user_interactions</strong></td>
     <td><code>topic: interactions</code></td>
     <td>Kafka Topic</td>
     <td></td>
     <td>Ключ партиционирования: post_id. RF=3</td>
-  </tr>
-  <tr>
-    <td rowspan="3"><strong>user_interactions_log</strong></td>
-    <td><code>PRIMARY KEY (user_id, created_at)</code></td>
-    <td>ClickHouse MergeTree</td>
-    <td></td>
-    <td>Сортировка по user_id + дата для аналитики</td>
-  </tr>
-  <tr>
-    <td><code>PARTITION BY toYYYYMM(created_at)</code></td>
-    <td>ClickHouse Partition</td>
-    <td></td>
-    <td>Партиции по месяцам - быстрый DROP старых данных</td>
-  </tr>
-  <tr>
-    <td><code>idx_interactions_post</code></td>
-    <td>ClickHouse Skipping Index</td>
-    <td></td>
-    <td>post_id - аналитика по конкретному посту</td>
   </tr>
 </table>
 
@@ -849,8 +829,7 @@ $$
 | :--- | :--- |
 | **PostgreSQL (Citus)** | Полный бэкап раз в неделю + инкрементальный ежедневно. Хранение: 4 полных бэкапа |
 | **Redis Cluster** | RDB-снапшоты каждые 6 часов в S3 + AOF лог. При полной потере данные восстанавливаются из PostgreSQL. |
-| **ClickHouse** | Полный бэкап раз в неделю + инкрементальный ежедневно в S3. Данные также можно восстановить повторным чтением из Kafka |
-| **Kafka** | Встроенная репликация: 3 копии каждой партиции. Отдельный бэкап не нужен, данные временные. |
+| **Kafka** | Встроенная репликация: 3 копии каждой партиции. Полный бэкап раз в неделю + инкрементальный ежедневно в S3 |
 
 # 7. Алгоритмы
 
@@ -1013,7 +992,6 @@ $$
 | :--- | :--- | :--- |
 | PostgreSQL | Реляционная база данных | Open-source, большое количество расширений |
 | Redis Cluster | Key-value хранилище и кэш | Open-source, способен обрабатывать огромный RPS для разгрузки PostgreSQL |
-| Clickhouse | Колоночная СУБД | Инструмент для аналитики |
 | Apache Kafka | Потоковая шина данных | Open-source, высокая пропускная способность, индустриальный стандарт |
 | RustFS | S3-хранилище | Open-Source, self-hosted |
 | Go | Backend | Высокая производительность, высокая скорость разработки |
@@ -1034,8 +1012,7 @@ $$
 | RustFS | Erasure Coding (10 data shards + 4 parity shards) [[22]](https://docs.rustfs.com/concepts/principle/erasure-coding.html) | При отказе одного диска/ноды файл по-прежнему доступен |
 | PostgreSQL | 1 master + 2 replicas | При отказе master переход на replica |
 | Redis | 3 master + 3 replicas | При отказе master переход на replica |
-| ClickHouse | 8 шардов по 3 реплики | При отказе одной реплики - переход на другую, при отказе всех реплик - недоступность части данных |
-| Kafka | replication factor 3 | При полном отказе перестают записываться логи пользователей |
+| Kafka | replication factor 3 | При полном отказе перестают записываться логи пользователей, лента рекомендаций без учета новых постов и подписок |
 | CDN | На стороне провайдера | При недоступности - раздача напрямую из S3 |
 
 # 10. Схема проекта
