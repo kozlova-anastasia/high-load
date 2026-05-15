@@ -1061,11 +1061,11 @@ $$
 
 | Сервис | Тип сервера | Конфигурация | Кол-во серверов | 
 | :--- | :--- | :--- | :--- |
-| PostgreSQL | Bare | 48 cpu / 256 GB RAM / 4 * 1.92 storage | 6 |
-| Redis | Bare | 64 cpu / 1–2 TB RAM / 4 * 3.84 storage | 10 |
-| Kafka | Bare | 32 cpu / 128 GB RAM / 4 * 1.92 storage | 5 |
-| RustFS | Bare | 64 cpu / 128–256 GB RAM / 12 * 16 storage | 12 |
-| Backend | VPS | 32 cpu / 8–16 GB RAM / 100 GB storage | 20 |
+| PostgreSQL | Bare | 48 cpu / 256 GB RAM / 4 * 1.92 TB storage | 6 |
+| Redis | Bare | 64 cpu / 2 TB RAM / 4 * 3.84 TB storage | 10 |
+| Kafka | Bare | 32 cpu / 128 GB RAM / 4 * 1.92 TB storage | 5 |
+| RustFS | Bare | 64 cpu / 256 GB RAM / 12 * 16 TB storage | 12 |
+| Backend | VPS | 32 cpu / 16 GB RAM / 100 GB storage | 20 |
 | Web | VPS | 16 cpu / 16 GB RAM / 100 GB storage | 4 |
 | K8s | VPS | 8 cpu / 16 GB RAM / 100 GB storage | 3 |
 
