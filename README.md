@@ -1063,15 +1063,18 @@ $$
 
 ## 11.2. Сервера
 
-| Сервис | Тип сервера | Конфигурация | Кол-во серверов | 
-| :--- | :--- | :--- | :--- |
-| PostgreSQL | Bare | 48 cpu / 256 GB RAM / 4 * 1.92 TB storage | 6 |
-| Redis | Bare | 64 cpu / 2 TB RAM / 4 * 3.84 TB storage | 10 |
-| Kafka | Bare | 32 cpu / 128 GB RAM / 4 * 1.92 TB storage | 5 |
-| RustFS | Bare | 64 cpu / 256 GB RAM / 12 * 16 TB storage | 12 |
-| Backend | VPS | 32 cpu / 16 GB RAM / 100 GB storage | 20 |
-| Web | VPS | 16 cpu / 16 GB RAM / 100 GB storage | 4 |
-| K8s | VPS | 8 cpu / 16 GB RAM / 100 GB storage | 3 |
+| Сервис                             | Тип сервера | Конфигурация                               | Кол-во серверов |
+| :--------------------------------- | :---------- | :----------------------------------------- | :-------------- |
+| PostgreSQL Coordinator             | Bare        | 16 cpu / 64 GB RAM / 2 × 960 GB SSD        | 2               |
+| PostgreSQL Worker (master shards)  | Bare        | 48 cpu / 256 GB RAM / 4 × 1.92 TB NVMe SSD | 24              |
+| PostgreSQL Worker (replica shards) | Bare        | 48 cpu / 256 GB RAM / 4 × 1.92 TB NVMe SSD | 48              |
+| Redis                              | Bare        | 64 cpu / 2 TB RAM / 4 × 3.84 TB SSD        | 10              |
+| Kafka                              | Bare        | 32 cpu / 128 GB RAM / 4 × 1.92 TB SSD      | 5               |
+| RustFS                             | Bare        | 64 cpu / 256 GB RAM / 12 × 16 TB HDD       | 12              |
+| Backend                            | VPS         | 32 cpu / 16 GB RAM / 100 GB SSD            | 20              |
+| Web                                | VPS         | 16 cpu / 16 GB RAM / 100 GB SSD            | 4               |
+| Kubernetes                         | VPS         | 8 cpu / 16 GB RAM / 100 GB SSD             | 3               |
+
 
 ## 11.3. Kubernetes
 
