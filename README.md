@@ -427,7 +427,7 @@ $$
 | :--- | :--- | :--- | :--- | :--- |
 | `users` | PostgreSQL | По id | 1 master + 2 replicas | Основная таблица, все остальные ссылаются на неё. Collocated с `user_sessions`, `user_counters` |
 | `user_sessions` | PostgreSQL | По user_id (collocated с `users`) | Аналогично `users`: 1 master + 2 replicas | Collocated с `users` |
-| `follow` | PostgreSQL | По `following_id` | 1 master + 2 replicas | Шард по following_id - запрос "кто подписан на пользователя X?" выполняется на одном шарде |
+| `follow` | PostgreSQL | По following_id | 1 master + 2 replicas | Шард по following_id - запрос "кто подписан на пользователя X?" выполняется на одном шарде |
 | `user_counters` | Redis | По user_id | 3 master + 3 replica | Хранит горячие счётчики |
 | `posts` | PostgreSQL | По author_id (collocated с `users`) | 1 master + 2 replicas | Collocated с `post_media`, `media`: по author_id - пост собирается на одном шарде. Soft delete через is_deleted |
 | `post_media` | PostgreSQL | По author_id из связанного `posts` (collocated) | Аналогично `posts` | Связующая таблица пост - медиа |
@@ -1023,7 +1023,7 @@ $$
 
 ## 10.1. Схема
 
-![alt text](<схема проекта.drawio.png>)
+![alt text](<схема проекта 2.drawio.png>)
 
 ## 10.2. Пояснение к схеме
 
