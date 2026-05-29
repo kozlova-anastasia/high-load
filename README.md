@@ -1051,29 +1051,29 @@ $$
 
 ## 11.1. Требования к ресурсам
 
-| Сервис | Целевая пиковая нагрузка | CPU | RAM | Сеть | Пояснение |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| PostgreSQL | 84 700 | 192 | 512 Гб | - | Лайки/подписки, просмотр контента: 83 531 RPS <br>Публикация постов: 492.71 RPS <br>Публикация сторис: 653.13 RPS <br>Аuth: 38 RPS (7 заходов в день, TTL 30 дней, Пик RPS по всем пользователям 8 021) |
-| Redis | 211 000 | 160 | 10 Тб | - | Лайки/подписки + просмотр контента: 199 477 RPS <br>Публикация постов: 492.71 RPS <br>Публикация сторис: 653.13 RPS <br>Auth: 10 427 RPS (8 021 RPS, 30% refresh) |
-| Kafka | 200 000 | 128 | 256 | - | Лайки/подписки + просмотр контента: 199 477 RPS <br>Публикация постов: 492.71 RPS <br>Публикация сторис: 653.13 RPS |
-| RustFS | 181 Гбит/с | 192 | 512 Гб | 181 Гбит | см. 4.2 |
-| Backend | 145 000 | 600 | 60 Гб | - | - |
-| Web | 48 000 | 64 | 96 Гб | - | - |
-| NGINX | 217 Гбит/с | 840 | 137 Гб | 217 Гбит | см. 4.2. |
+| Сервис | Целевая пиковая нагрузка (RPS / трафик) | CPU (сумма, vCPU) | RAM (сумма, GB) | Диск (сумма) |
+|--------|------------------------------------------|-------------------|-----------------|---------------|
+| PostgreSQL (metadata only) | ~84.7k RPS (метаданные) | 576 | 3 072 | 384 TB NVMe |
+| Redis Cluster (горячие счётчики, feed cache) | горячие операции счётчиков и кешей | 384 | 3 072 | 24 TB SSD |
+| Kafka (event bus) | запись/репликация событий, ingestion | 48 | 192 | 12 TB SSD |
+| RustFS / Object storage (media) | трафик чтения/записи медиа (через CDN) | — | — | ~100 TB HDD |
+| Backend (app servers) | 145k RPS (API) | 320 | 160 | 2 TB |
+| Web (frontend) | 48k RPS | 48 | 64 | 0.4 TB |
+| NGINX L7 (ingress fleet) | суммарный пиковый throughput (cache misses) | — | — | — |
 
 ## 11.2. Сервера
 
-| Сервис                             | Тип сервера | Конфигурация                               | Кол-во серверов |
-| :--------------------------------- | :---------- | :----------------------------------------- | :-------------- |
-| PostgreSQL Coordinator             | Bare        | 16 cpu / 64 GB RAM / 2 × 960 GB SSD        | 2               |
-| PostgreSQL Worker (master shards)  | Bare        | 48 cpu / 256 GB RAM / 4 × 1.92 TB NVMe SSD | 24              |
-| PostgreSQL Worker (replica shards) | Bare        | 48 cpu / 256 GB RAM / 4 × 1.92 TB NVMe SSD | 48              |
-| Redis                              | Bare        | 64 cpu / 2 TB RAM / 4 × 3.84 TB SSD        | 10              |
-| Kafka                              | Bare        | 32 cpu / 128 GB RAM / 4 × 1.92 TB SSD      | 5               |
-| RustFS                             | Bare        | 64 cpu / 256 GB RAM / 12 × 16 TB HDD       | 12              |
-| Backend                            | VPS         | 32 cpu / 16 GB RAM / 100 GB SSD            | 20              |
-| Web                                | VPS         | 16 cpu / 16 GB RAM / 100 GB SSD            | 4               |
-| Kubernetes                         | VPS         | 8 cpu / 16 GB RAM / 100 GB SSD             | 3               |
+| Роль / Сервис | Тип сервера | Конфигурация (на узел) | Кол‑во узлов | Примечание |
+|---------------|-------------|------------------------|--------------|-------------|
+| PostgreSQL worker (Postgres data nodes) | Bare-metal | 48 vCPU / 256 GB RAM / 4 * 8 TB NVMe (≈32 TB) | 12 | На этих узлах размещаются shard‑masters и replicas. Общий NVMe ≈384 TB. RF=3 |
+| PostgreSQL coordinators | Bare-metal | 16 vCPU / 64 GB RAM / 2 * 960 GB SSD | 2 | Active + standby |
+| Redis cluster nodes | Bare-metal / VM | 64 vCPU / 512 GB RAM / 4 * 1.6 TB SSD | 6 | 3 master + 3 replica |
+| Kafka brokers | Bare-metal / VM | 16 vCPU / 64 GB RAM / 4 * 1 TB SSD | 3 | RF=3 |
+| RustFS (object storage nodes) | HDD-servers | 32–64 vCPU / 256 GB RAM / 6 * 16 TB HDD | 6 | Erasure coding; ~96 TB raw. Масштабируется по мере роста |
+| Backend | VM / VPS | 32 vCPU / 16 GB RAM / 100 GB SSD | 10 | - |
+| Frontend | VM / VPS | 16 vCPU / 16 GB RAM / 100 GB SSD | 4 | + CDN |
+| NGINX L7 (ingress) | Bare-metal / VM | 16 vCPU / 64 GB RAM / 10 Gbit NIC | 37 | Распределение по доменам: api 11, upload 4, cdn 22 |
+| Kubernetes worker pool | Bare / VM | 32 vCPU / 64 GB RAM / 100 GB SSD | 7 | - |
 
 
 ## 11.3. Kubernetes
